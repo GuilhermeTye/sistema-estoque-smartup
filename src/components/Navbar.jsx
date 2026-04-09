@@ -3,7 +3,6 @@ import logoSmartUp from "../assets/logo.png";
 
 const links = [
   { to: "/dashboard", label: "Dashboard" },
-  { to: "/vendas", label: "Vendas" },
   { to: "/pedidos-venda", label: "Pedidos" },
   { to: "/produtos", label: "Produtos" },
   { to: "/clientes", label: "Clientes" },
@@ -17,21 +16,26 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
-        <Link to="/dashboard" className="flex items-center gap-3">
+        
+        {/* LOGO + NOME (CLICÁVEL) */}
+        <Link to="/" className="flex items-center gap-3 group">
           <img
             src={logoSmartUp}
             alt="Logo Smart Up"
-            className="h-12 w-12 object-contain drop-shadow-sm"
+            className="h-12 w-12 object-contain transition group-hover:scale-105"
           />
 
           <div className="leading-tight">
-            <h1 className="text-lg font-black text-slate-900">Smart Up</h1>
+            <h1 className="text-lg font-black text-slate-900 group-hover:text-[#2AB7B0] transition">
+              Smart Up
+            </h1>
             <p className="text-xs font-medium text-slate-500">
               Cerro Azul • Gestão Inteligente
             </p>
           </div>
         </Link>
 
+        {/* MENU DESKTOP */}
         <nav className="hidden flex-wrap gap-2 md:flex">
           {links.map((item) => {
             const ativo = location.pathname === item.to;
@@ -53,6 +57,7 @@ export default function Navbar() {
         </nav>
       </div>
 
+      {/* MENU MOBILE */}
       <div className="flex gap-2 overflow-x-auto px-4 pb-3 md:hidden">
         {links.map((item) => {
           const ativo = location.pathname === item.to;

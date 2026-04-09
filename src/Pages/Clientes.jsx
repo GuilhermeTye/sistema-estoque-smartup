@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
+function formatarCPF(valor) {
+  return valor
+    .replace(/\D/g, "")
+    .slice(0, 11)
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+function limparCPF(valor) {
+  return String(valor || "").replace(/\D/g, "");
+}
+
 export default function Clientes() {
   const [clientes, setClientes] = useState([]);
   const [carregando, setCarregando] = useState(false);
@@ -11,6 +24,7 @@ export default function Clientes() {
     telefone: "",
     email: "",
     cidade: "",
+    cpf: "",
   });
 
   useEffect(() => {
@@ -42,12 +56,44 @@ export default function Clientes() {
   }
 
   function handleChange(e) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+
+    if (name === "cpf") {
+      setForm((prev) => ({
+        ...prev,
+        cpf: formatarCPF(value),
+      }));
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   }
 
   async function salvarCliente() {
-    if (!form.nome.trim()) return alert("Nome obrigatório");
-    if (!form.telefone.trim()) return alert("Telefone obrigatório");
+    if (!form.nome.trim()) {
+      alert("Nome obrigatório");
+      return;
+    }
+
+    if (!form.telefone.trim()) {
+      alert("Telefone obrigatório");
+      return;
+    }
+
+    if (!form.cpf.trim()) {
+      alert("CPF obrigatório");
+      return;
+    }
+
+    const cpfLimpo = limparCPF(form.cpf);
+
+    if (cpfLimpo.length !== 11) {
+      alert("CPF deve ter 11 números");
+      return;
+    }
 
     try {
       setSalvando(true);
@@ -57,12 +103,22 @@ export default function Clientes() {
         telefone: form.telefone.trim(),
         email: form.email.trim(),
         cidade: form.cidade.trim(),
+        cpf: form.cpf.trim(),
       };
 
       const { error } = await supabase.from("clientes").insert([payload]);
 
       if (error) {
         console.error(error);
+
+        if (
+          String(error.message || "").toLowerCase().includes("unique") ||
+          String(error.message || "").toLowerCase().includes("duplicate")
+        ) {
+          alert("Já existe um cliente cadastrado com esse CPF");
+          return;
+        }
+
         alert("Erro ao salvar cliente");
         return;
       }
@@ -72,6 +128,7 @@ export default function Clientes() {
         telefone: "",
         email: "",
         cidade: "",
+        cpf: "",
       });
 
       await carregarClientes();
@@ -85,7 +142,8 @@ export default function Clientes() {
   }
 
   async function deletarCliente(id) {
-    if (!window.confirm("Deseja excluir este cliente?")) return;
+    const confirmar = window.confirm("Deseja excluir este cliente?");
+    if (!confirmar) return;
 
     try {
       const { error } = await supabase.from("clientes").delete().eq("id", id);
@@ -107,7 +165,7 @@ export default function Clientes() {
     <div className="bg-white p-6">
       <h1 className="mb-4 text-3xl font-black text-slate-800">Clientes</h1>
 
-      <div className="mb-6 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-5">
         <input
           name="nome"
           placeholder="Nome"
@@ -115,6 +173,7 @@ export default function Clientes() {
           onChange={handleChange}
           className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
         />
+
         <input
           name="telefone"
           placeholder="Telefone"
@@ -122,6 +181,15 @@ export default function Clientes() {
           onChange={handleChange}
           className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
         />
+
+        <input
+          name="cpf"
+          placeholder="CPF *"
+          value={form.cpf}
+          onChange={handleChange}
+          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
+        />
+
         <input
           name="email"
           placeholder="Email"
@@ -129,6 +197,7 @@ export default function Clientes() {
           onChange={handleChange}
           className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
         />
+
         <input
           name="cidade"
           placeholder="Cidade"
@@ -140,7 +209,7 @@ export default function Clientes() {
         <button
           onClick={salvarCliente}
           disabled={salvando}
-          className="md:col-span-2 xl:col-span-4 rounded-2xl bg-[#2AB7B0] py-3 font-bold text-white hover:bg-[#0B7285] disabled:opacity-60"
+          className="md:col-span-2 xl:col-span-5 rounded-2xl bg-[#2AB7B0] py-3 font-bold text-white hover:bg-[#0B7285] disabled:opacity-60"
         >
           {salvando ? "Salvando..." : "Salvar cliente"}
         </button>
@@ -162,16 +231,19 @@ export default function Clientes() {
                 <tr>
                   <th className="p-3">Nome</th>
                   <th className="p-3">Telefone</th>
+                  <th className="p-3">CPF</th>
                   <th className="p-3">Email</th>
                   <th className="p-3">Cidade</th>
                   <th className="p-3">Ações</th>
                 </tr>
               </thead>
+
               <tbody>
                 {clientes.map((c) => (
                   <tr key={c.id} className="border-t">
                     <td className="p-3">{c.nome}</td>
                     <td className="p-3">{c.telefone}</td>
+                    <td className="p-3">{c.cpf || "-"}</td>
                     <td className="p-3">{c.email || "-"}</td>
                     <td className="p-3">{c.cidade || "-"}</td>
                     <td className="p-3">

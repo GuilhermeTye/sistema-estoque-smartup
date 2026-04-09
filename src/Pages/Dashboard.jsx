@@ -183,19 +183,19 @@ export default function Dashboard() {
         <section className="mt-6 grid gap-4 lg:grid-cols-3">
           <QuickCard
             title="Visual premium"
-            content="Seu sistema agora segue um padrão mais moderno, limpo e pronto para apresentar profissionalismo ao cliente."
+            content="Nosso sistema entrega um padrão mais moderno, limpo e pronto para apresentar profissionalismo ao seu dia."
             accent="bg-[#2AB7B0]"
           />
 
           <QuickCard
             title="Mais valor percebido"
-            content="Um painel bem desenhado melhora a experiência de uso e ajuda a transformar o sistema em um produto vendável por mensalidade."
+            content="Um sistema que te entrega tudo que você precisa! A um clique de distancia."
             accent="bg-[#EE6D46]"
           />
 
           <QuickCard
             title="Base para crescer"
-            content="Esse layout já serve como estrutura para login, multiusuário, planos, permissões e expansão futura."
+            content="O caminho para o Sucesso começa no controle fino financeiro"
             accent="bg-[#0B7285]"
           />
         </section>
