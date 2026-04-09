@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --smartup-teal: #2ab7b0;
+  --smartup-teal-dark: #0b7285;
+  --smartup-orange: #ee6d46;
+  --smartup-red: #e52d22;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family:
+    Inter,
+    Arial,
+    Helvetica,
+    sans-serif;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+* {
+  box-sizing: border-box;
+}

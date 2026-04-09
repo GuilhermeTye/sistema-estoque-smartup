@@ -1,0 +1,59 @@
+/* Reset básico */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Fonte e base */
+body {
+  font-family: "Inter", sans-serif;
+  background-color: #f3f4f6; /* cinza leve */
+  color: #111827;
+}
+
+/* Melhor renderização */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Scroll personalizado */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Inputs padrão */
+input {
+  outline: none;
+}
+
+/* Botões */
+button {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  transform: scale(1.03);
+}
+
+/* Cards padrão */
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
