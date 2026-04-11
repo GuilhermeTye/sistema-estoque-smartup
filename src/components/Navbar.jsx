@@ -1,23 +1,27 @@
 import { Link, useLocation } from "react-router-dom";
 import logoSmartUp from "../assets/logo.png";
-
-const links = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/pedidos-venda", label: "Pedidos" },
-  { to: "/produtos", label: "Produtos" },
-  { to: "/clientes", label: "Clientes" },
-  { to: "/relatorio", label: "Relatório" },
-  { to: "/ordem-servico", label: "OS" },
-];
+import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
   const location = useLocation();
+  const { perfil, logout } = useAuth();
+
+  const links = [
+    { to: "/dashboard", label: "Dashboard", modulo: "modulo_dashboard" },
+    { to: "/pedidos-venda", label: "Pedidos", modulo: "modulo_pedidos" },
+    { to: "/produtos", label: "Produtos", modulo: "modulo_produtos" },
+    { to: "/clientes", label: "Clientes", modulo: "modulo_clientes" },
+    { to: "/relatorio", label: "Relatório", modulo: "modulo_relatorio" },
+    { to: "/ordem-servico", label: "OS", modulo: "modulo_os" },
+  ];
+
+  const linksPermitidos = links.filter(
+    (item) => perfil && Number(perfil[item.modulo]) === 1
+  );
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
-        
-        {/* LOGO + NOME (CLICÁVEL) */}
         <Link to="/" className="flex items-center gap-3 group">
           <img
             src={logoSmartUp}
@@ -35,31 +39,38 @@ export default function Navbar() {
           </div>
         </Link>
 
-        {/* MENU DESKTOP */}
-        <nav className="hidden flex-wrap gap-2 md:flex">
-          {links.map((item) => {
-            const ativo = location.pathname === item.to;
+        <div className="hidden items-center gap-2 md:flex">
+          <nav className="flex flex-wrap gap-2">
+            {linksPermitidos.map((item) => {
+              const ativo = location.pathname === item.to;
 
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`rounded-2xl px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                  ativo
-                    ? "bg-[#2AB7B0] text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={`rounded-2xl px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                    ativo
+                      ? "bg-[#2AB7B0] text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <button
+            onClick={logout}
+            className="rounded-2xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100"
+          >
+            Sair
+          </button>
+        </div>
       </div>
 
-      {/* MENU MOBILE */}
       <div className="flex gap-2 overflow-x-auto px-4 pb-3 md:hidden">
-        {links.map((item) => {
+        {linksPermitidos.map((item) => {
           const ativo = location.pathname === item.to;
 
           return (
@@ -76,6 +87,13 @@ export default function Navbar() {
             </Link>
           );
         })}
+
+        <button
+          onClick={logout}
+          className="whitespace-nowrap rounded-2xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600"
+        >
+          Sair
+        </button>
       </div>
     </header>
   );

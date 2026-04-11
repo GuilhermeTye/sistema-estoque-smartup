@@ -1,9 +1,11 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Navbar from "./components/Navbar";
+import ProtectedRoute from "./components/ProtectedRoute";
+import ModuleRoute from "./components/ModuleRoute";
 
 import Home from "./pages/Home";
+import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Vendas from "./pages/Vendas";
 import PedidosVenda from "./pages/PedidosVenda";
 import Produtos from "./pages/Produtos";
 import Clientes from "./pages/Clientes";
@@ -13,21 +15,81 @@ import OrdemServico from "./pages/OrdemServico";
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-white text-slate-900">
-        <Navbar />
+      <Routes>
+        <Route path="/login" element={<Login />} />
 
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/home" element={<Navigate to="/" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/vendas" element={<Vendas />} />
-          <Route path="/pedidos-venda" element={<PedidosVenda />} />
-          <Route path="/produtos" element={<Produtos />} />
-          <Route path="/clientes" element={<Clientes />} />
-          <Route path="/relatorio" element={<Relatorio />} />
-          <Route path="/ordem-servico" element={<OrdemServico />} />
-        </Routes>
-      </div>
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <div className="min-h-screen bg-white text-slate-900">
+                <Navbar />
+
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/home" element={<Navigate to="/" replace />} />
+
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <ModuleRoute modulo="modulo_dashboard">
+                        <Dashboard />
+                      </ModuleRoute>
+                    }
+                  />
+
+                  <Route
+                    path="/pedidos-venda"
+                    element={
+                      <ModuleRoute modulo="modulo_pedidos">
+                        <PedidosVenda />
+                      </ModuleRoute>
+                    }
+                  />
+
+                  <Route
+                    path="/produtos"
+                    element={
+                      <ModuleRoute modulo="modulo_produtos">
+                        <Produtos />
+                      </ModuleRoute>
+                    }
+                  />
+
+                  <Route
+                    path="/clientes"
+                    element={
+                      <ModuleRoute modulo="modulo_clientes">
+                        <Clientes />
+                      </ModuleRoute>
+                    }
+                  />
+
+                  <Route
+                    path="/relatorio"
+                    element={
+                      <ModuleRoute modulo="modulo_relatorio">
+                        <Relatorio />
+                      </ModuleRoute>
+                    }
+                  />
+
+                  <Route
+                    path="/ordem-servico"
+                    element={
+                      <ModuleRoute modulo="modulo_os">
+                        <OrdemServico />
+                      </ModuleRoute>
+                    }
+                  />
+
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </div>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   );
 }
