@@ -3,14 +3,14 @@ import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ModuleRoute from "./components/ModuleRoute";
 
-import Home from "./Pages/Home";
-import Login from "./Pages/Login";
-import Dashboard from "./Pages/Dashboard";
-import PedidosVenda from "./Pages/PedidosVenda";
-import Produtos from "./Pages/Produtos";
-import Clientes from "./Pages/Clientes";
-import Relatorio from "./Pages/Relatorio";
-import OrdemServico from "./Pages/OrdemServico";
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import PedidosVenda from "./pages/PedidosVenda";
+import Produtos from "./pages/Produtos";
+import Clientes from "./pages/Clientes";
+import Relatorio from "./pages/Relatorio";
+import OrdemServico from "./pages/OrdemServico";
 
 export default function App() {
   return (
