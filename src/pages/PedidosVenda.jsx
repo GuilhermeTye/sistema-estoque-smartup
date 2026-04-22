@@ -101,6 +101,112 @@ export default function PedidosVenda() {
     return d.toLocaleDateString("pt-BR");
   }
 
+  function calcularPrecoLiquido(item) {
+    const preco = Number(item.preco || 0);
+    const desconto = Number(item.desconto || 0);
+    return preco - preco * (desconto / 100);
+  }
+
+  function calcularTotalItem(item) {
+    return calcularPrecoLiquido(item) * Number(item.quantidade || 0);
+  }
+
+  function imprimirCupom(vendaId, clienteNome, itensCupom, totalCupom) {
+    const conteudo = `
+      <html>
+        <head>
+          <title>Cupom do Pedido #${vendaId}</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 20px;
+              color: #000;
+            }
+            h1 {
+              font-size: 20px;
+              margin-bottom: 10px;
+            }
+            .info {
+              margin-bottom: 15px;
+              font-size: 14px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 15px;
+            }
+            th, td {
+              border: 1px solid #ccc;
+              padding: 8px;
+              text-align: left;
+              font-size: 12px;
+            }
+            .total {
+              margin-top: 20px;
+              font-size: 18px;
+              font-weight: bold;
+            }
+            .rodape {
+              margin-top: 20px;
+              font-size: 12px;
+              color: #444;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Cupom do Pedido #${vendaId}</h1>
+          <div class="info"><strong>Cliente:</strong> ${clienteNome || "Consumidor"}</div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th>Qtd</th>
+                <th>Preço Un.</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itensCupom
+                .map(
+                  (item) => `
+                    <tr>
+                      <td>${item.nome}</td>
+                      <td>${item.quantidade}</td>
+                      <td>${moeda(calcularPrecoLiquido(item))}</td>
+                      <td>${moeda(calcularTotalItem(item))}</td>
+                    </tr>
+                  `
+                )
+                .join("")}
+            </tbody>
+          </table>
+
+          <div class="total">Total do pedido: ${moeda(totalCupom)}</div>
+          <div class="rodape">Impresso pelo sistema Smart Up</div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    const janela = window.open("", "_blank", "width=800,height=600");
+
+    if (!janela) {
+      alert("Não foi possível abrir a janela de impressão");
+      return;
+    }
+
+    janela.document.open();
+    janela.document.write(conteudo);
+    janela.document.close();
+  }
+
   const pedidosFiltrados = useMemo(() => {
     return pedidos.filter((p) => {
       const texto = buscaPedido.toLowerCase();
@@ -151,6 +257,19 @@ export default function PedidosVenda() {
       })
       .slice(0, 8);
   }, [produtos, produtoBusca]);
+
+  const totalPedido = useMemo(() => {
+    return itens.reduce((acc, item) => acc + calcularTotalItem(item), 0);
+  }, [itens]);
+
+  const lucroPedido = useMemo(() => {
+    return itens.reduce((acc, item) => {
+      const totalLiquido = calcularTotalItem(item);
+      const custoTotal =
+        Number(item.custo || 0) * Number(item.quantidade || 0);
+      return acc + (totalLiquido - custoTotal);
+    }, 0);
+  }, [itens]);
 
   function selecionarCliente(cliente) {
     setClienteSelecionado(cliente);
@@ -246,29 +365,6 @@ export default function PedidosVenda() {
     setItens((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function calcularPrecoLiquido(item) {
-    const preco = Number(item.preco || 0);
-    const desconto = Number(item.desconto || 0);
-    return preco - preco * (desconto / 100);
-  }
-
-  function calcularTotalItem(item) {
-    return calcularPrecoLiquido(item) * Number(item.quantidade || 0);
-  }
-
-  const totalPedido = useMemo(() => {
-    return itens.reduce((acc, item) => acc + calcularTotalItem(item), 0);
-  }, [itens]);
-
-  const lucroPedido = useMemo(() => {
-    return itens.reduce((acc, item) => {
-      const totalLiquido = calcularTotalItem(item);
-      const custoTotal =
-        Number(item.custo || 0) * Number(item.quantidade || 0);
-      return acc + (totalLiquido - custoTotal);
-    }, 0);
-  }, [itens]);
-
   async function editarPedido(pedido) {
     try {
       const { data: itensVenda, error } = await supabase
@@ -324,6 +420,10 @@ export default function PedidosVenda() {
       alert("Adicione pelo menos um produto");
       return;
     }
+
+    const clienteNomeParaCupom = clienteSelecionado?.nome || "Consumidor";
+    const itensParaCupom = itens.map((item) => ({ ...item }));
+    const totalParaCupom = totalPedido;
 
     try {
       setSalvando(true);
@@ -399,7 +499,18 @@ export default function PedidosVenda() {
           }
         }
 
-        alert("Pedido salvo com sucesso");
+        const desejaImprimir = window.confirm(
+          "Pedido salvo com sucesso.\n\nDeseja imprimir o cupom do pedido?"
+        );
+
+        if (desejaImprimir) {
+          imprimirCupom(
+            vendaCriada.id,
+            clienteNomeParaCupom,
+            itensParaCupom,
+            totalParaCupom
+          );
+        }
       }
 
       if (modo === "editar") {
@@ -570,7 +681,18 @@ export default function PedidosVenda() {
           }
         }
 
-        alert("Pedido atualizado com sucesso");
+        const desejaImprimir = window.confirm(
+          "Pedido atualizado com sucesso.\n\nDeseja imprimir o cupom do pedido?"
+        );
+
+        if (desejaImprimir) {
+          imprimirCupom(
+            pedidoEditandoId,
+            clienteNomeParaCupom,
+            itensParaCupom,
+            totalParaCupom
+          );
+        }
       }
 
       cancelarPedido();
