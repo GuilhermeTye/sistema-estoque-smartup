@@ -7,7 +7,8 @@ const CLIENTE_PADRAO = {
 };
 
 export default function PedidosVenda() {
-  const [modo, setModo] = useState("lista"); // lista | novo
+  const [modo, setModo] = useState("lista"); // lista | novo | editar
+  const [pedidoEditandoId, setPedidoEditandoId] = useState(null);
 
   const [pedidos, setPedidos] = useState([]);
   const [clientes, setClientes] = useState([]);
@@ -23,6 +24,8 @@ export default function PedidosVenda() {
   const [produtoBusca, setProdutoBusca] = useState("");
   const [itens, setItens] = useState([]);
   const [salvando, setSalvando] = useState(false);
+
+  const [pedidoExcluir, setPedidoExcluir] = useState(null);
 
   useEffect(() => {
     carregarTudo();
@@ -50,7 +53,7 @@ export default function PedidosVenda() {
 
       setPedidos(vendasData || []);
       setClientes(clientesData || []);
-      setProdutos((produtosData || []).filter((p) => Number(p.estoque || 0) > 0));
+      setProdutos(produtosData || []);
     } catch (error) {
       console.error(error);
       alert("Erro inesperado ao carregar dados");
@@ -61,14 +64,16 @@ export default function PedidosVenda() {
 
   function abrirNovoPedido() {
     setModo("novo");
+    setPedidoEditandoId(null);
     setClienteBusca("Consumidor");
     setClienteSelecionado(CLIENTE_PADRAO);
     setProdutoBusca("");
     setItens([]);
   }
 
-  function cancelarNovoPedido() {
+  function cancelarPedido() {
     setModo("lista");
+    setPedidoEditandoId(null);
     setClienteBusca("Consumidor");
     setClienteSelecionado(CLIENTE_PADRAO);
     setProdutoBusca("");
@@ -116,8 +121,6 @@ export default function PedidosVenda() {
     const clienteAtual = String(clienteSelecionado?.nome || "").trim().toLowerCase();
 
     if (!termo || termo === "consumidor") return [];
-
-    // Se o texto do input já for o cliente selecionado, não mostra o balão
     if (termo === clienteAtual) return [];
 
     return clientes
@@ -158,15 +161,11 @@ export default function PedidosVenda() {
   }
 
   function adicionarProduto(produto) {
-    if (Number(produto.estoque || 0) <= 0) {
-      alert("Produto sem estoque");
-      return;
-    }
-
     const itemExistente = itens.find((i) => i.id === produto.id);
 
     if (itemExistente) {
-      if (itemExistente.quantidade >= Number(produto.estoque)) {
+      const estoqueDisponivel = Number(produto.estoque || 0);
+      if (itemExistente.quantidade >= estoqueDisponivel) {
         alert("Quantidade maior que o estoque disponível");
         return;
       }
@@ -174,11 +173,16 @@ export default function PedidosVenda() {
       setItens((prev) =>
         prev.map((i) =>
           i.id === produto.id
-            ? { ...i, quantidade: i.quantidade + 1 }
+            ? { ...i, quantidade: i.quantidade + 1, estoque: estoqueDisponivel }
             : i
         )
       );
     } else {
+      if (Number(produto.estoque || 0) <= 0) {
+        alert("Produto sem estoque");
+        return;
+      }
+
       setItens((prev) => [
         ...prev,
         {
@@ -258,6 +262,56 @@ export default function PedidosVenda() {
     }, 0);
   }, [itens]);
 
+  async function editarPedido(pedido) {
+    try {
+      const { data: itensVenda, error } = await supabase
+        .from("itens_venda")
+        .select("*")
+        .eq("venda_id", pedido.id);
+
+      if (error) {
+        console.error(error);
+        alert("Erro ao carregar itens do pedido");
+        return;
+      }
+
+      const itensEditaveis = (itensVenda || []).map((item) => {
+        const produtoOriginal = produtos.find((p) => p.id === item.produto_id);
+
+        return {
+          id: item.produto_id,
+          produto_id: item.produto_id,
+          nome: item.nome_produto,
+          codigo: produtoOriginal?.codigo || "",
+          un: "UN",
+          quantidade: Number(item.quantidade || 0),
+          preco: Number(item.preco_unitario || 0),
+          custo: Number(item.custo_unitario || 0),
+          desconto: 0,
+          estoque:
+            Number(produtoOriginal?.estoque || 0) + Number(item.quantidade || 0),
+        };
+      });
+
+      setPedidoEditandoId(pedido.id);
+      setModo("editar");
+      setClienteSelecionado(
+        pedido.cliente_id
+          ? {
+              id: pedido.cliente_id,
+              nome: pedido.cliente_nome || "Consumidor",
+            }
+          : CLIENTE_PADRAO
+      );
+      setClienteBusca(pedido.cliente_nome || "Consumidor");
+      setItens(itensEditaveis);
+      setProdutoBusca("");
+    } catch (error) {
+      console.error(error);
+      alert("Erro inesperado ao editar pedido");
+    }
+  }
+
   async function salvarPedido() {
     if (itens.length === 0) {
       alert("Adicione pelo menos um produto");
@@ -267,78 +321,254 @@ export default function PedidosVenda() {
     try {
       setSalvando(true);
 
-      const payloadVenda = {
-        cliente_id: clienteSelecionado?.id || null,
-        cliente_nome: clienteSelecionado?.nome || "Consumidor",
-        total: totalPedido,
-        lucro: lucroPedido,
-        status: "fechado",
-      };
-
-      const { data: vendaCriada, error: vendaError } = await supabase
-        .from("vendas")
-        .insert([payloadVenda])
-        .select()
-        .single();
-
-      if (vendaError) {
-        console.error(vendaError);
-        alert("Erro ao salvar pedido");
-        return;
-      }
-
-      const itensFormatados = itens.map((item) => {
-        const precoLiquido = calcularPrecoLiquido(item);
-        const subtotal = precoLiquido * Number(item.quantidade || 0);
-        const lucroItem =
-          subtotal - Number(item.custo || 0) * Number(item.quantidade || 0);
-
-        return {
-          venda_id: vendaCriada.id,
-          produto_id: item.produto_id,
-          nome_produto: item.nome,
-          quantidade: Number(item.quantidade || 0),
-          preco_unitario: precoLiquido,
-          custo_unitario: Number(item.custo || 0),
-          subtotal,
-          lucro_item: lucroItem,
+      if (modo === "novo") {
+        const payloadVenda = {
+          cliente_id: clienteSelecionado?.id || null,
+          cliente_nome: clienteSelecionado?.nome || "Consumidor",
+          total: totalPedido,
+          lucro: lucroPedido,
+          status: "fechado",
         };
-      });
 
-      const { error: itensError } = await supabase
-        .from("itens_venda")
-        .insert(itensFormatados);
+        const { data: vendaCriada, error: vendaError } = await supabase
+          .from("vendas")
+          .insert([payloadVenda])
+          .select()
+          .single();
 
-      if (itensError) {
-        console.error(itensError);
-        alert("Erro ao salvar os itens");
-        return;
-      }
-
-      for (const item of itens) {
-        const novoEstoque =
-          Number(item.estoque || 0) - Number(item.quantidade || 0);
-
-        const { error: estoqueError } = await supabase
-          .from("produtos")
-          .update({ estoque: novoEstoque })
-          .eq("id", item.produto_id);
-
-        if (estoqueError) {
-          console.error(estoqueError);
-          alert(`Erro ao atualizar estoque de ${item.nome}`);
+        if (vendaError) {
+          console.error(vendaError);
+          alert("Erro ao salvar pedido");
           return;
         }
+
+        const itensFormatados = itens.map((item) => {
+          const precoLiquido = calcularPrecoLiquido(item);
+          const subtotal = precoLiquido * Number(item.quantidade || 0);
+          const lucroItem =
+            subtotal - Number(item.custo || 0) * Number(item.quantidade || 0);
+
+          return {
+            venda_id: vendaCriada.id,
+            produto_id: item.produto_id,
+            nome_produto: item.nome,
+            quantidade: Number(item.quantidade || 0),
+            preco_unitario: precoLiquido,
+            custo_unitario: Number(item.custo || 0),
+            subtotal,
+            lucro_item: lucroItem,
+          };
+        });
+
+        const { error: itensError } = await supabase
+          .from("itens_venda")
+          .insert(itensFormatados);
+
+        if (itensError) {
+          console.error(itensError);
+          alert("Erro ao salvar os itens");
+          return;
+        }
+
+        for (const item of itens) {
+          const produtoOriginal = produtos.find((p) => p.id === item.produto_id);
+          const estoqueAtual = Number(produtoOriginal?.estoque || 0);
+          const novoEstoque = estoqueAtual - Number(item.quantidade || 0);
+
+          const { error: estoqueError } = await supabase
+            .from("produtos")
+            .update({ estoque: novoEstoque })
+            .eq("id", item.produto_id);
+
+          if (estoqueError) {
+            console.error(estoqueError);
+            alert(`Erro ao atualizar estoque de ${item.nome}`);
+            return;
+          }
+        }
+
+        alert("Pedido salvo com sucesso");
       }
 
-      alert("Pedido salvo com sucesso");
-      cancelarNovoPedido();
+      if (modo === "editar") {
+        const { data: itensAntigos, error: itensAntigosError } = await supabase
+          .from("itens_venda")
+          .select("*")
+          .eq("venda_id", pedidoEditandoId);
+
+        if (itensAntigosError) {
+          console.error(itensAntigosError);
+          alert("Erro ao carregar itens antigos");
+          return;
+        }
+
+        for (const itemAntigo of itensAntigos || []) {
+          const produtoOriginal = produtos.find((p) => p.id === itemAntigo.produto_id);
+          const estoqueAtual = Number(produtoOriginal?.estoque || 0);
+          const estoqueRestaurado = estoqueAtual + Number(itemAntigo.quantidade || 0);
+
+          const { error: estoqueRestoreError } = await supabase
+            .from("produtos")
+            .update({ estoque: estoqueRestaurado })
+            .eq("id", itemAntigo.produto_id);
+
+          if (estoqueRestoreError) {
+            console.error(estoqueRestoreError);
+            alert("Erro ao restaurar estoque antigo");
+            return;
+          }
+        }
+
+        const { error: deleteItensError } = await supabase
+          .from("itens_venda")
+          .delete()
+          .eq("venda_id", pedidoEditandoId);
+
+        if (deleteItensError) {
+          console.error(deleteItensError);
+          alert("Erro ao substituir itens do pedido");
+          return;
+        }
+
+        const payloadAtualizacao = {
+          cliente_id: clienteSelecionado?.id || null,
+          cliente_nome: clienteSelecionado?.nome || "Consumidor",
+          total: totalPedido,
+          lucro: lucroPedido,
+          status: "fechado",
+        };
+
+        const { error: updateVendaError } = await supabase
+          .from("vendas")
+          .update(payloadAtualizacao)
+          .eq("id", pedidoEditandoId);
+
+        if (updateVendaError) {
+          console.error(updateVendaError);
+          alert("Erro ao atualizar pedido");
+          return;
+        }
+
+        const novosItens = itens.map((item) => {
+          const precoLiquido = calcularPrecoLiquido(item);
+          const subtotal = precoLiquido * Number(item.quantidade || 0);
+          const lucroItem =
+            subtotal - Number(item.custo || 0) * Number(item.quantidade || 0);
+
+          return {
+            venda_id: pedidoEditandoId,
+            produto_id: item.produto_id,
+            nome_produto: item.nome,
+            quantidade: Number(item.quantidade || 0),
+            preco_unitario: precoLiquido,
+            custo_unitario: Number(item.custo || 0),
+            subtotal,
+            lucro_item: lucroItem,
+          };
+        });
+
+        const { error: insertNovosItensError } = await supabase
+          .from("itens_venda")
+          .insert(novosItens);
+
+        if (insertNovosItensError) {
+          console.error(insertNovosItensError);
+          alert("Erro ao salvar novos itens");
+          return;
+        }
+
+        for (const item of itens) {
+          const produtoOriginal = produtos.find((p) => p.id === item.produto_id);
+          const estoqueAtual = Number(produtoOriginal?.estoque || 0);
+          const novoEstoque = estoqueAtual - Number(item.quantidade || 0);
+
+          const { error: estoqueError } = await supabase
+            .from("produtos")
+            .update({ estoque: novoEstoque })
+            .eq("id", item.produto_id);
+
+          if (estoqueError) {
+            console.error(estoqueError);
+            alert(`Erro ao atualizar estoque de ${item.nome}`);
+            return;
+          }
+        }
+
+        alert("Pedido atualizado com sucesso");
+      }
+
+      cancelarPedido();
       await carregarTudo();
     } catch (error) {
       console.error(error);
       alert("Erro inesperado ao salvar pedido");
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function excluirPedidoConfirmado() {
+    if (!pedidoExcluir) return;
+
+    try {
+      const pedidoId = pedidoExcluir.id;
+
+      const { data: itensVenda, error: itensError } = await supabase
+        .from("itens_venda")
+        .select("*")
+        .eq("venda_id", pedidoId);
+
+      if (itensError) {
+        console.error(itensError);
+        alert("Erro ao carregar itens do pedido");
+        return;
+      }
+
+      for (const item of itensVenda || []) {
+        const produtoOriginal = produtos.find((p) => p.id === item.produto_id);
+        const estoqueAtual = Number(produtoOriginal?.estoque || 0);
+        const estoqueRestaurado = estoqueAtual + Number(item.quantidade || 0);
+
+        const { error: estoqueError } = await supabase
+          .from("produtos")
+          .update({ estoque: estoqueRestaurado })
+          .eq("id", item.produto_id);
+
+        if (estoqueError) {
+          console.error(estoqueError);
+          alert("Erro ao restaurar estoque");
+          return;
+        }
+      }
+
+      const { error: deleteItensError } = await supabase
+        .from("itens_venda")
+        .delete()
+        .eq("venda_id", pedidoId);
+
+      if (deleteItensError) {
+        console.error(deleteItensError);
+        alert("Erro ao excluir itens do pedido");
+        return;
+      }
+
+      const { error: deleteVendaError } = await supabase
+        .from("vendas")
+        .delete()
+        .eq("id", pedidoId);
+
+      if (deleteVendaError) {
+        console.error(deleteVendaError);
+        alert("Erro ao excluir pedido");
+        return;
+      }
+
+      setPedidoExcluir(null);
+      alert("Pedido excluído com sucesso");
+      await carregarTudo();
+    } catch (error) {
+      console.error(error);
+      alert("Erro inesperado ao excluir pedido");
     }
   }
 
@@ -421,19 +651,20 @@ export default function PedidosVenda() {
                   <th className="p-4">Total</th>
                   <th className="p-4">Lucro</th>
                   <th className="p-4">Status</th>
+                  <th className="p-4">Ações</th>
                 </tr>
               </thead>
 
               <tbody>
                 {carregandoLista ? (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center">
+                    <td colSpan={7} className="p-6 text-center">
                       Carregando pedidos...
                     </td>
                   </tr>
                 ) : pedidosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center">
+                    <td colSpan={7} className="p-6 text-center">
                       Nenhum pedido encontrado
                     </td>
                   </tr>
@@ -459,6 +690,25 @@ export default function PedidosVenda() {
                             {status === "fechado" ? "Fechado" : "Aberto"}
                           </span>
                         </td>
+                        <td className="p-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => editarPedido(p)}
+                              className="rounded-lg bg-blue-50 px-3 py-2 font-semibold text-blue-700 hover:bg-blue-100"
+                            >
+                              Editar
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setPedidoExcluir(p)}
+                              className="rounded-lg bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100"
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
@@ -471,16 +721,18 @@ export default function PedidosVenda() {
         <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-slate-800">Novo pedido de venda</h1>
+              <h1 className="text-2xl font-bold text-slate-800">
+                {modo === "editar" ? "Editar pedido de venda" : "Novo pedido de venda"}
+              </h1>
               <p className="text-sm text-slate-500">
-                Crie o pedido na mesma página, no estilo ERP
+                Crie ou edite o pedido na mesma página, no estilo ERP
               </p>
             </div>
 
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={cancelarNovoPedido}
+                onClick={cancelarPedido}
                 className="rounded-2xl border border-[#2AB7B0] px-6 py-3 font-semibold text-[#2AB7B0] hover:bg-[#f0fffd]"
               >
                 Cancelar
@@ -492,7 +744,11 @@ export default function PedidosVenda() {
                 disabled={salvando}
                 className="rounded-2xl bg-[#2AB7B0] px-6 py-3 font-semibold text-white hover:bg-[#0B7285] disabled:opacity-60"
               >
-                {salvando ? "Salvando..." : "Salvar"}
+                {salvando
+                  ? "Salvando..."
+                  : modo === "editar"
+                  ? "Atualizar pedido"
+                  : "Salvar"}
               </button>
             </div>
           </div>
@@ -721,6 +977,35 @@ export default function PedidosVenda() {
                   </h3>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pedidoExcluir && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-800">Confirmar exclusão</h3>
+            <p className="mt-2 text-slate-600">
+              Deseja realmente excluir o pedido <strong>#{pedidoExcluir.id}</strong>?
+            </p>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPedidoExcluir(null)}
+                className="rounded-2xl border border-slate-300 px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Não
+              </button>
+
+              <button
+                type="button"
+                onClick={excluirPedidoConfirmado}
+                className="rounded-2xl bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700"
+              >
+                Sim
+              </button>
             </div>
           </div>
         </div>
