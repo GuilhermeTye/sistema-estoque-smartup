@@ -113,8 +113,12 @@ export default function PedidosVenda() {
 
   const clientesFiltrados = useMemo(() => {
     const termo = clienteBusca.trim().toLowerCase();
+    const clienteAtual = String(clienteSelecionado?.nome || "").trim().toLowerCase();
 
     if (!termo || termo === "consumidor") return [];
+
+    // Se o texto do input já for o cliente selecionado, não mostra o balão
+    if (termo === clienteAtual) return [];
 
     return clientes
       .filter((c) => {
@@ -125,7 +129,7 @@ export default function PedidosVenda() {
         );
       })
       .slice(0, 8);
-  }, [clientes, clienteBusca]);
+  }, [clientes, clienteBusca, clienteSelecionado]);
 
   const produtosFiltrados = useMemo(() => {
     const termo = produtoBusca.trim().toLowerCase();
@@ -507,9 +511,16 @@ export default function PedidosVenda() {
                     type="text"
                     value={clienteBusca}
                     onChange={(e) => {
-                      setClienteBusca(e.target.value);
-                      if (e.target.value.trim().toLowerCase() === "consumidor") {
+                      const valor = e.target.value;
+                      setClienteBusca(valor);
+
+                      if (valor.trim().toLowerCase() === "consumidor") {
                         setClienteSelecionado(CLIENTE_PADRAO);
+                      } else if (
+                        valor.trim().toLowerCase() !==
+                        String(clienteSelecionado?.nome || "").trim().toLowerCase()
+                      ) {
+                        setClienteSelecionado(null);
                       }
                     }}
                     placeholder="Pesquisar cliente"
