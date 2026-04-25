@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 const produtoVazio = {
@@ -14,8 +14,11 @@ export default function Produtos() {
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [abaCadastro, setAbaCadastro] = useState(false);
-
   const [forms, setForms] = useState([{ ...produtoVazio }]);
+
+  const [pesquisa, setPesquisa] = useState("");
+  const [filtroEstoque, setFiltroEstoque] = useState("todos");
+  const [produtoEditando, setProdutoEditando] = useState(null);
 
   useEffect(() => {
     carregarProdutos();
@@ -45,13 +48,30 @@ export default function Produtos() {
     }
   }
 
+  const produtosFiltrados = useMemo(() => {
+    const termo = pesquisa.toLowerCase().trim();
+
+    return produtos.filter((p) => {
+      const combinaPesquisa =
+        p.nome?.toLowerCase().includes(termo) ||
+        p.codigo?.toLowerCase().includes(termo);
+
+      const estoque = Number(p.estoque || 0);
+
+      const combinaFiltro =
+        filtroEstoque === "todos" ||
+        (filtroEstoque === "comEstoque" && estoque > 0) ||
+        (filtroEstoque === "semEstoque" && estoque <= 0);
+
+      return combinaPesquisa && combinaFiltro;
+    });
+  }, [produtos, pesquisa, filtroEstoque]);
+
   function handleChange(index, e) {
     const { name, value } = e.target;
 
     setForms((prev) =>
-      prev.map((item, i) =>
-        i === index ? { ...item, [name]: value } : item
-      )
+      prev.map((item, i) => (i === index ? { ...item, [name]: value } : item))
     );
   }
 
@@ -66,6 +86,28 @@ export default function Produtos() {
     }
 
     setForms((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function abrirNovoProduto() {
+    setProdutoEditando(null);
+    setForms([{ ...produtoVazio }]);
+    setAbaCadastro(true);
+  }
+
+  function atualizarProduto(produto) {
+    setProdutoEditando(produto);
+
+    setForms([
+      {
+        nome: produto.nome || "",
+        codigo: produto.codigo || "",
+        custo: produto.custo ?? "",
+        preco: produto.preco ?? "",
+        estoque: produto.estoque ?? "",
+      },
+    ]);
+
+    setAbaCadastro(true);
   }
 
   async function salvarProdutos() {
@@ -96,27 +138,54 @@ export default function Produtos() {
     try {
       setSalvando(true);
 
-      const payload = produtosValidos.map((p) => ({
-        nome: p.nome.trim(),
-        codigo: p.codigo.trim(),
-        custo: Number(p.custo),
-        preco: Number(p.preco),
-        estoque: Number(p.estoque),
-      }));
+      if (produtoEditando) {
+        const p = produtosValidos[0];
 
-      const { error } = await supabase.from("produtos").insert(payload);
+        const payload = {
+          nome: p.nome.trim(),
+          codigo: p.codigo.trim(),
+          custo: Number(p.custo),
+          preco: Number(p.preco),
+          estoque: Number(p.estoque),
+        };
 
-      if (error) {
-        console.error(error);
-        alert("Erro ao salvar produtos");
-        return;
+        const { error } = await supabase
+          .from("produtos")
+          .update(payload)
+          .eq("id", produtoEditando.id);
+
+        if (error) {
+          console.error(error);
+          alert("Erro ao atualizar produto");
+          return;
+        }
+
+        alert("Produto atualizado com sucesso");
+      } else {
+        const payload = produtosValidos.map((p) => ({
+          nome: p.nome.trim(),
+          codigo: p.codigo.trim(),
+          custo: Number(p.custo),
+          preco: Number(p.preco),
+          estoque: Number(p.estoque),
+        }));
+
+        const { error } = await supabase.from("produtos").insert(payload);
+
+        if (error) {
+          console.error(error);
+          alert("Erro ao salvar produtos");
+          return;
+        }
+
+        alert("Produto(s) salvo(s) com sucesso");
       }
 
       setForms([{ ...produtoVazio }]);
+      setProdutoEditando(null);
       setAbaCadastro(false);
 
       await carregarProdutos();
-      alert("Produto(s) salvo(s) com sucesso");
     } catch (error) {
       console.error(error);
       alert("Erro inesperado ao salvar produtos");
@@ -156,11 +225,30 @@ export default function Produtos() {
         <h1 className="text-3xl font-black text-slate-800">Produtos</h1>
 
         <button
-          onClick={() => setAbaCadastro(true)}
+          onClick={abrirNovoProduto}
           className="rounded-2xl bg-[#EE6D46] px-5 py-3 font-bold text-white hover:bg-[#d85d38]"
         >
           Novo produto
         </button>
+      </div>
+
+      <div className="mb-6 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-3">
+        <input
+          placeholder="Pesquisar por nome ou código..."
+          value={pesquisa}
+          onChange={(e) => setPesquisa(e.target.value)}
+          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0] md:col-span-2"
+        />
+
+        <select
+          value={filtroEstoque}
+          onChange={(e) => setFiltroEstoque(e.target.value)}
+          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
+        >
+          <option value="todos">Todos os produtos</option>
+          <option value="comEstoque">Com estoque</option>
+          <option value="semEstoque">Sem estoque</option>
+        </select>
       </div>
 
       {abaCadastro && (
@@ -168,15 +256,21 @@ export default function Produtos() {
           <div className="mb-4 flex items-center justify-between gap-3 border-b pb-4">
             <div>
               <h2 className="font-bold text-slate-700">
-                Cadastro de produtos
+                {produtoEditando ? "Atualizar produto" : "Cadastro de produtos"}
               </h2>
               <p className="text-sm text-slate-500">
-                Cadastre vários produtos de uma vez
+                {produtoEditando
+                  ? "Altere os dados do produto selecionado"
+                  : "Cadastre vários produtos de uma vez"}
               </p>
             </div>
 
             <button
-              onClick={() => setAbaCadastro(false)}
+              onClick={() => {
+                setAbaCadastro(false);
+                setProdutoEditando(null);
+                setForms([{ ...produtoVazio }]);
+              }}
               className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-50"
             >
               Fechar
@@ -233,32 +327,40 @@ export default function Produtos() {
                     className="w-full rounded-xl border bg-white p-3 outline-none focus:border-[#2AB7B0]"
                   />
 
-                  <button
-                    onClick={() => removerLinha(index)}
-                    className="rounded-xl bg-red-50 px-3 font-bold text-[#E52D22] hover:bg-red-100"
-                    title="Remover linha"
-                  >
-                    ×
-                  </button>
+                  {!produtoEditando && (
+                    <button
+                      onClick={() => removerLinha(index)}
+                      className="rounded-xl bg-red-50 px-3 font-bold text-[#E52D22] hover:bg-red-100"
+                      title="Remover linha"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
 
           <div className="mt-4 flex flex-col gap-3 md:flex-row">
-            <button
-              onClick={adicionarLinha}
-              className="rounded-2xl border border-[#2AB7B0] px-5 py-3 font-bold text-[#0C7886] hover:bg-[#2AB7B0]/10"
-            >
-              + Adicionar mais produto
-            </button>
+            {!produtoEditando && (
+              <button
+                onClick={adicionarLinha}
+                className="rounded-2xl border border-[#2AB7B0] px-5 py-3 font-bold text-[#0C7886] hover:bg-[#2AB7B0]/10"
+              >
+                + Adicionar mais produto
+              </button>
+            )}
 
             <button
               onClick={salvarProdutos}
               disabled={salvando}
               className="rounded-2xl bg-[#EE6D46] px-5 py-3 font-bold text-white hover:bg-[#d85d38] disabled:opacity-60 md:ml-auto"
             >
-              {salvando ? "Salvando..." : "Salvar produtos"}
+              {salvando
+                ? "Salvando..."
+                : produtoEditando
+                ? "Atualizar produto"
+                : "Salvar produtos"}
             </button>
           </div>
         </div>
@@ -271,8 +373,8 @@ export default function Produtos() {
 
         {carregando ? (
           <p className="p-4">Carregando...</p>
-        ) : produtos.length === 0 ? (
-          <p className="p-4 text-slate-500">Nenhum produto cadastrado.</p>
+        ) : produtosFiltrados.length === 0 ? (
+          <p className="p-4 text-slate-500">Nenhum produto encontrado.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -288,20 +390,30 @@ export default function Produtos() {
               </thead>
 
               <tbody>
-                {produtos.map((p) => (
+                {produtosFiltrados.map((p) => (
                   <tr key={p.id} className="border-t">
                     <td className="p-3">{p.nome}</td>
                     <td className="p-3">{p.codigo || "-"}</td>
                     <td className="p-3">{moeda(p.custo)}</td>
                     <td className="p-3">{moeda(p.preco)}</td>
                     <td className="p-3">{p.estoque}</td>
+
                     <td className="p-3">
-                      <button
-                        onClick={() => deletarProduto(p.id)}
-                        className="rounded-lg bg-red-50 px-3 py-1 font-semibold text-[#E52D22] hover:bg-red-100"
-                      >
-                        Excluir
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => atualizarProduto(p)}
+                          className="rounded-lg bg-[#2AB7B0]/10 px-3 py-1 font-semibold text-[#0C7886] hover:bg-[#2AB7B0]/20"
+                        >
+                          Atualizar
+                        </button>
+
+                        <button
+                          onClick={() => deletarProduto(p.id)}
+                          className="rounded-lg bg-red-50 px-3 py-1 font-semibold text-[#E52D22] hover:bg-red-100"
+                        >
+                          Excluir
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
