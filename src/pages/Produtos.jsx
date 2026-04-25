@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
+const produtoVazio = {
+  nome: "",
+  codigo: "",
+  custo: "",
+  preco: "",
+  estoque: "",
+};
+
 export default function Produtos() {
   const [produtos, setProdutos] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [abaCadastro, setAbaCadastro] = useState(false);
 
-  const [form, setForm] = useState({
-    nome: "",
-    codigo: "",
-    custo: "",
-    preco: "",
-    estoque: "",
-  });
+  const [forms, setForms] = useState([{ ...produtoVazio }]);
 
   useEffect(() => {
     carregarProdutos();
@@ -42,48 +45,81 @@ export default function Produtos() {
     }
   }
 
-  function handleChange(e) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  function handleChange(index, e) {
+    const { name, value } = e.target;
+
+    setForms((prev) =>
+      prev.map((item, i) =>
+        i === index ? { ...item, [name]: value } : item
+      )
+    );
   }
 
-  async function salvarProduto() {
-    if (!form.nome.trim()) return alert("Nome obrigatório");
-    if (form.custo === "" || Number(form.custo) < 0) return alert("Custo inválido");
-    if (form.preco === "" || Number(form.preco) < 0) return alert("Preço inválido");
-    if (form.estoque === "" || Number(form.estoque) < 0) return alert("Estoque inválido");
+  function adicionarLinha() {
+    setForms((prev) => [...prev, { ...produtoVazio }]);
+  }
+
+  function removerLinha(index) {
+    if (forms.length === 1) {
+      setForms([{ ...produtoVazio }]);
+      return;
+    }
+
+    setForms((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function salvarProdutos() {
+    const produtosValidos = forms.filter((p) => p.nome.trim());
+
+    if (produtosValidos.length === 0) {
+      alert("Cadastre pelo menos um produto");
+      return;
+    }
+
+    for (const p of produtosValidos) {
+      if (p.custo === "" || Number(p.custo) < 0) {
+        alert(`Custo inválido no produto: ${p.nome}`);
+        return;
+      }
+
+      if (p.preco === "" || Number(p.preco) < 0) {
+        alert(`Preço inválido no produto: ${p.nome}`);
+        return;
+      }
+
+      if (p.estoque === "" || Number(p.estoque) < 0) {
+        alert(`Estoque inválido no produto: ${p.nome}`);
+        return;
+      }
+    }
 
     try {
       setSalvando(true);
 
-      const payload = {
-        nome: form.nome.trim(),
-        codigo: form.codigo.trim(),
-        custo: Number(form.custo),
-        preco: Number(form.preco),
-        estoque: Number(form.estoque),
-      };
+      const payload = produtosValidos.map((p) => ({
+        nome: p.nome.trim(),
+        codigo: p.codigo.trim(),
+        custo: Number(p.custo),
+        preco: Number(p.preco),
+        estoque: Number(p.estoque),
+      }));
 
-      const { error } = await supabase.from("produtos").insert([payload]);
+      const { error } = await supabase.from("produtos").insert(payload);
 
       if (error) {
         console.error(error);
-        alert("Erro ao salvar produto");
+        alert("Erro ao salvar produtos");
         return;
       }
 
-      setForm({
-        nome: "",
-        codigo: "",
-        custo: "",
-        preco: "",
-        estoque: "",
-      });
+      setForms([{ ...produtoVazio }]);
+      setAbaCadastro(false);
 
       await carregarProdutos();
-      alert("Produto salvo com sucesso");
+      alert("Produto(s) salvo(s) com sucesso");
     } catch (error) {
       console.error(error);
-      alert("Erro inesperado ao salvar produto");
+      alert("Erro inesperado ao salvar produtos");
     } finally {
       setSalvando(false);
     }
@@ -116,56 +152,117 @@ export default function Produtos() {
 
   return (
     <div className="bg-white p-6">
-      <h1 className="mb-4 text-3xl font-black text-slate-800">Produtos</h1>
-
-      <div className="mb-6 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-5">
-        <input
-          name="nome"
-          placeholder="Nome"
-          value={form.nome}
-          onChange={handleChange}
-          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
-        />
-        <input
-          name="codigo"
-          placeholder="Código"
-          value={form.codigo}
-          onChange={handleChange}
-          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
-        />
-        <input
-          name="custo"
-          type="number"
-          placeholder="Custo"
-          value={form.custo}
-          onChange={handleChange}
-          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
-        />
-        <input
-          name="preco"
-          type="number"
-          placeholder="Preço"
-          value={form.preco}
-          onChange={handleChange}
-          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
-        />
-        <input
-          name="estoque"
-          type="number"
-          placeholder="Estoque"
-          value={form.estoque}
-          onChange={handleChange}
-          className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0]"
-        />
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h1 className="text-3xl font-black text-slate-800">Produtos</h1>
 
         <button
-          onClick={salvarProduto}
-          disabled={salvando}
-          className="md:col-span-2 xl:col-span-5 rounded-2xl bg-[#EE6D46] py-3 font-bold text-white hover:bg-[#d85d38] disabled:opacity-60"
+          onClick={() => setAbaCadastro(true)}
+          className="rounded-2xl bg-[#EE6D46] px-5 py-3 font-bold text-white hover:bg-[#d85d38]"
         >
-          {salvando ? "Salvando..." : "Salvar produto"}
+          Novo produto
         </button>
       </div>
+
+      {abaCadastro && (
+        <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3 border-b pb-4">
+            <div>
+              <h2 className="font-bold text-slate-700">
+                Cadastro de produtos
+              </h2>
+              <p className="text-sm text-slate-500">
+                Cadastre vários produtos de uma vez
+              </p>
+            </div>
+
+            <button
+              onClick={() => setAbaCadastro(false)}
+              className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              Fechar
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {forms.map((form, index) => (
+              <div
+                key={index}
+                className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-6"
+              >
+                <input
+                  name="nome"
+                  placeholder="Nome"
+                  value={form.nome}
+                  onChange={(e) => handleChange(index, e)}
+                  className="rounded-xl border bg-white p-3 outline-none focus:border-[#2AB7B0] xl:col-span-2"
+                />
+
+                <input
+                  name="codigo"
+                  placeholder="Código"
+                  value={form.codigo}
+                  onChange={(e) => handleChange(index, e)}
+                  className="rounded-xl border bg-white p-3 outline-none focus:border-[#2AB7B0]"
+                />
+
+                <input
+                  name="custo"
+                  type="number"
+                  placeholder="Custo"
+                  value={form.custo}
+                  onChange={(e) => handleChange(index, e)}
+                  className="rounded-xl border bg-white p-3 outline-none focus:border-[#2AB7B0]"
+                />
+
+                <input
+                  name="preco"
+                  type="number"
+                  placeholder="Preço"
+                  value={form.preco}
+                  onChange={(e) => handleChange(index, e)}
+                  className="rounded-xl border bg-white p-3 outline-none focus:border-[#2AB7B0]"
+                />
+
+                <div className="flex gap-2">
+                  <input
+                    name="estoque"
+                    type="number"
+                    placeholder="Estoque"
+                    value={form.estoque}
+                    onChange={(e) => handleChange(index, e)}
+                    className="w-full rounded-xl border bg-white p-3 outline-none focus:border-[#2AB7B0]"
+                  />
+
+                  <button
+                    onClick={() => removerLinha(index)}
+                    className="rounded-xl bg-red-50 px-3 font-bold text-[#E52D22] hover:bg-red-100"
+                    title="Remover linha"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 md:flex-row">
+            <button
+              onClick={adicionarLinha}
+              className="rounded-2xl border border-[#2AB7B0] px-5 py-3 font-bold text-[#0C7886] hover:bg-[#2AB7B0]/10"
+            >
+              + Adicionar mais produto
+            </button>
+
+            <button
+              onClick={salvarProdutos}
+              disabled={salvando}
+              className="rounded-2xl bg-[#EE6D46] px-5 py-3 font-bold text-white hover:bg-[#d85d38] disabled:opacity-60 md:ml-auto"
+            >
+              {salvando ? "Salvando..." : "Salvar produtos"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b p-4">
@@ -189,6 +286,7 @@ export default function Produtos() {
                   <th className="p-3">Ações</th>
                 </tr>
               </thead>
+
               <tbody>
                 {produtos.map((p) => (
                   <tr key={p.id} className="border-t">
