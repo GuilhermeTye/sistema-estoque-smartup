@@ -157,7 +157,9 @@ export default function PedidosVenda() {
         </head>
         <body>
           <h1>Cupom do Pedido #${vendaId}</h1>
-          <div class="info"><strong>Cliente:</strong> ${clienteNome || "Consumidor"}</div>
+          <div class="info"><strong>Cliente:</strong> ${
+            clienteNome || "Consumidor"
+          }</div>
 
           <table>
             <thead>
@@ -873,7 +875,7 @@ export default function PedidosVenda() {
           </div>
 
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-6 py-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
               <input
                 type="text"
                 placeholder="Buscar pedido ou cliente"
@@ -882,34 +884,32 @@ export default function PedidosVenda() {
                 className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-4 py-2 outline-none"
               />
 
-              <div className="flex flex-wrap gap-2">
-                <input
-                  type="date"
-                  value={dataInicio}
-                  onChange={(e) => setDataInicio(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-600 outline-none"
-                />
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-600 outline-none"
+              />
 
-                <input
-                  type="date"
-                  value={dataFim}
-                  onChange={(e) => setDataFim(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-600 outline-none"
-                />
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-600 outline-none"
+              />
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBuscaPedido("");
-                    setDataInicio("");
-                    setDataFim("");
-                    setFiltroStatus("todos");
-                  }}
-                  className="rounded-xl border bg-white px-4 py-2 text-slate-600 hover:bg-slate-50"
-                >
-                  Limpar filtros
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setBuscaPedido("");
+                  setDataInicio("");
+                  setDataFim("");
+                  setFiltroStatus("todos");
+                }}
+                className="rounded-xl border bg-white px-4 py-2 text-slate-600 hover:bg-slate-50"
+              >
+                Limpar filtros
+              </button>
             </div>
 
             <div className="flex gap-2">
@@ -1220,7 +1220,10 @@ export default function PedidosVenda() {
                   <tbody>
                     {itens.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-6 text-center text-slate-500">
+                        <td
+                          colSpan={9}
+                          className="p-6 text-center text-slate-500"
+                        >
                           Nenhum item adicionado
                         </td>
                       </tr>
