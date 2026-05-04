@@ -34,6 +34,47 @@ export default function PedidosVenda() {
     carregarTudo();
   }, []);
 
+  function formatarDataInput(data) {
+    const ano = data.getFullYear();
+    const mes = String(data.getMonth() + 1).padStart(2, "0");
+    const dia = String(data.getDate()).padStart(2, "0");
+    return `${ano}-${mes}-${dia}`;
+  }
+
+  function selecionarHoje() {
+    const hoje = new Date();
+    const data = formatarDataInput(hoje);
+    setDataInicio(data);
+    setDataFim(data);
+  }
+
+  function selecionarUltimos7Dias() {
+    const fim = new Date();
+    const inicio = new Date();
+    inicio.setDate(fim.getDate() - 6);
+
+    setDataInicio(formatarDataInput(inicio));
+    setDataFim(formatarDataInput(fim));
+  }
+
+  function selecionarEsteMes() {
+    const hoje = new Date();
+    const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+
+    setDataInicio(formatarDataInput(inicio));
+    setDataFim(formatarDataInput(fim));
+  }
+
+  function selecionarMesPassado() {
+    const hoje = new Date();
+    const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+
+    setDataInicio(formatarDataInput(inicio));
+    setDataFim(formatarDataInput(fim));
+  }
+
   async function carregarTudo() {
     try {
       setCarregandoLista(true);
@@ -886,6 +927,38 @@ export default function PedidosVenda() {
                   onChange={(e) => setDataFim(e.target.value)}
                   className="w-[170px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-600 outline-none"
                 />
+
+                <button
+                  type="button"
+                  onClick={selecionarHoje}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-600 hover:bg-slate-100"
+                >
+                  Hoje
+                </button>
+
+                <button
+                  type="button"
+                  onClick={selecionarUltimos7Dias}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-600 hover:bg-slate-100"
+                >
+                  Últimos 7 dias
+                </button>
+
+                <button
+                  type="button"
+                  onClick={selecionarEsteMes}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-600 hover:bg-slate-100"
+                >
+                  Este mês
+                </button>
+
+                <button
+                  type="button"
+                  onClick={selecionarMesPassado}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-600 hover:bg-slate-100"
+                >
+                  Mês passado
+                </button>
 
                 <button
                   type="button"
