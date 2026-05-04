@@ -7,7 +7,7 @@ const CLIENTE_PADRAO = {
 };
 
 export default function PedidosVenda() {
-  const [modo, setModo] = useState("lista"); // lista | novo | editar
+  const [modo, setModo] = useState("lista");
   const [pedidoEditandoId, setPedidoEditandoId] = useState(null);
 
   const [pedidos, setPedidos] = useState([]);
@@ -16,6 +16,8 @@ export default function PedidosVenda() {
 
   const [buscaPedido, setBuscaPedido] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
   const [carregandoLista, setCarregandoLista] = useState(true);
 
   const [clienteBusca, setClienteBusca] = useState("Consumidor");
@@ -252,9 +254,26 @@ export default function PedidosVenda() {
       const bateStatus =
         filtroStatus === "todos" ? true : status === filtroStatus;
 
-      return bateBusca && bateStatus;
+      let bateData = true;
+
+      if (dataInicio || dataFim) {
+        const dataPedido = new Date(p.created_at);
+        dataPedido.setHours(0, 0, 0, 0);
+
+        if (dataInicio) {
+          const inicio = new Date(dataInicio + "T00:00:00");
+          bateData = bateData && dataPedido >= inicio;
+        }
+
+        if (dataFim) {
+          const fim = new Date(dataFim + "T00:00:00");
+          bateData = bateData && dataPedido <= fim;
+        }
+      }
+
+      return bateBusca && bateStatus && bateData;
     });
-  }, [pedidos, buscaPedido, filtroStatus]);
+  }, [pedidos, buscaPedido, filtroStatus, dataInicio, dataFim]);
 
   const clientesFiltrados = useMemo(() => {
     const termo = clienteBusca.trim().toLowerCase();
@@ -412,7 +431,9 @@ export default function PedidosVenda() {
       }
 
       const itensEditaveis = (itensVenda || []).map((item) => {
-        const produtoOriginal = produtos.find((p) => p.id === item.produto_id);
+        const produtoOriginal = produtos.find(
+          (p) => String(p.id) === String(item.produto_id)
+        );
 
         return {
           id: item.produto_id,
@@ -515,7 +536,10 @@ export default function PedidosVenda() {
         }
 
         for (const item of itens) {
-          const produtoOriginal = produtos.find((p) => p.id === item.produto_id);
+          const produtoOriginal = produtos.find(
+            (p) => String(p.id) === String(item.produto_id)
+          );
+
           const estoqueAtual = Number(produtoOriginal?.estoque || 0);
           const novoEstoque = estoqueAtual - Number(item.quantidade || 0);
 
@@ -564,7 +588,8 @@ export default function PedidosVenda() {
 
         const qtdAntigaPorProduto = {};
         for (const item of itensAntigos || []) {
-          const produtoId = Number(item.produto_id);
+          const produtoId = String(item.produto_id);
+
           qtdAntigaPorProduto[produtoId] =
             Number(qtdAntigaPorProduto[produtoId] || 0) +
             Number(item.quantidade || 0);
@@ -572,7 +597,8 @@ export default function PedidosVenda() {
 
         const qtdNovaPorProduto = {};
         for (const item of itens) {
-          const produtoId = Number(item.produto_id);
+          const produtoId = String(item.produto_id);
+
           qtdNovaPorProduto[produtoId] =
             Number(qtdNovaPorProduto[produtoId] || 0) +
             Number(item.quantidade || 0);
@@ -583,13 +609,22 @@ export default function PedidosVenda() {
             ...Object.keys(qtdAntigaPorProduto),
             ...Object.keys(qtdNovaPorProduto),
           ]),
-        ].map(Number);
+        ].filter((id) => id && id !== "null" && id !== "undefined");
+
+        const payloadAtualizacao = {
+          cliente_id: clienteSelecionado?.id || null,
+          cliente_nome: clienteSelecionado?.nome || "Consumidor",
+          total: totalPedido,
+          lucro: lucroPedido,
+          status: "fechado",
+        };
 
         if (produtoIds.length > 0) {
-          const { data: produtosBanco, error: produtosBancoError } = await supabase
-            .from("produtos")
-            .select("id, estoque, nome")
-            .in("id", produtoIds);
+          const { data: produtosBanco, error: produtosBancoError } =
+            await supabase
+              .from("produtos")
+              .select("id, estoque, nome")
+              .in("id", produtoIds);
 
           if (produtosBancoError) {
             console.error(produtosBancoError);
@@ -598,8 +633,9 @@ export default function PedidosVenda() {
           }
 
           for (const produto of produtosBanco || []) {
-            const antiga = Number(qtdAntigaPorProduto[produto.id] || 0);
-            const nova = Number(qtdNovaPorProduto[produto.id] || 0);
+            const produtoId = String(produto.id);
+            const antiga = Number(qtdAntigaPorProduto[produtoId] || 0);
+            const nova = Number(qtdNovaPorProduto[produtoId] || 0);
             const estoqueAtual = Number(produto.estoque || 0);
             const estoqueFinal = estoqueAtual + antiga - nova;
 
@@ -608,70 +644,77 @@ export default function PedidosVenda() {
               return;
             }
           }
+        }
 
-          const payloadAtualizacao = {
-            cliente_id: clienteSelecionado?.id || null,
-            cliente_nome: clienteSelecionado?.nome || "Consumidor",
-            total: totalPedido,
-            lucro: lucroPedido,
-            status: "fechado",
+        const { error: updateVendaError } = await supabase
+          .from("vendas")
+          .update(payloadAtualizacao)
+          .eq("id", pedidoEditandoId);
+
+        if (updateVendaError) {
+          console.error(updateVendaError);
+          alert("Erro ao atualizar pedido");
+          return;
+        }
+
+        const { error: deleteItensError } = await supabase
+          .from("itens_venda")
+          .delete()
+          .eq("venda_id", pedidoEditandoId);
+
+        if (deleteItensError) {
+          console.error(deleteItensError);
+          alert("Erro ao substituir itens do pedido");
+          return;
+        }
+
+        const novosItens = itens.map((item) => {
+          const precoLiquido = calcularPrecoLiquido(item);
+          const subtotal = precoLiquido * Number(item.quantidade || 0);
+          const lucroItem =
+            subtotal - Number(item.custo || 0) * Number(item.quantidade || 0);
+
+          return {
+            venda_id: pedidoEditandoId,
+            produto_id: item.produto_id,
+            nome_produto: item.nome,
+            quantidade: Number(item.quantidade || 0),
+            preco_unitario: precoLiquido,
+            custo_unitario: Number(item.custo || 0),
+            subtotal,
+            lucro_item: lucroItem,
           };
+        });
 
-          const { error: updateVendaError } = await supabase
-            .from("vendas")
-            .update(payloadAtualizacao)
-            .eq("id", pedidoEditandoId);
-
-          if (updateVendaError) {
-            console.error(updateVendaError);
-            alert("Erro ao atualizar pedido");
-            return;
-          }
-
-          const { error: deleteItensError } = await supabase
+        if (novosItens.length > 0) {
+          const { error: insertNovosItensError } = await supabase
             .from("itens_venda")
-            .delete()
-            .eq("venda_id", pedidoEditandoId);
+            .insert(novosItens);
 
-          if (deleteItensError) {
-            console.error(deleteItensError);
-            alert("Erro ao substituir itens do pedido");
+          if (insertNovosItensError) {
+            console.error(insertNovosItensError);
+            alert("Erro ao salvar novos itens");
             return;
           }
+        }
 
-          const novosItens = itens.map((item) => {
-            const precoLiquido = calcularPrecoLiquido(item);
-            const subtotal = precoLiquido * Number(item.quantidade || 0);
-            const lucroItem =
-              subtotal - Number(item.custo || 0) * Number(item.quantidade || 0);
+        if (produtoIds.length > 0) {
+          const { data: produtosBanco, error: produtosBancoError } =
+            await supabase
+              .from("produtos")
+              .select("id, estoque, nome")
+              .in("id", produtoIds);
 
-            return {
-              venda_id: pedidoEditandoId,
-              produto_id: item.produto_id,
-              nome_produto: item.nome,
-              quantidade: Number(item.quantidade || 0),
-              preco_unitario: precoLiquido,
-              custo_unitario: Number(item.custo || 0),
-              subtotal,
-              lucro_item: lucroItem,
-            };
-          });
-
-          if (novosItens.length > 0) {
-            const { error: insertNovosItensError } = await supabase
-              .from("itens_venda")
-              .insert(novosItens);
-
-            if (insertNovosItensError) {
-              console.error(insertNovosItensError);
-              alert("Erro ao salvar novos itens");
-              return;
-            }
+          if (produtosBancoError) {
+            console.error(produtosBancoError);
+            alert("Erro ao buscar produtos para atualizar estoque");
+            return;
           }
 
           for (const produto of produtosBanco || []) {
-            const antiga = Number(qtdAntigaPorProduto[produto.id] || 0);
-            const nova = Number(qtdNovaPorProduto[produto.id] || 0);
+            const produtoId = String(produto.id);
+            const antiga = Number(qtdAntigaPorProduto[produtoId] || 0);
+            const nova = Number(qtdNovaPorProduto[produtoId] || 0);
             const estoqueAtual = Number(produto.estoque || 0);
             const estoqueFinal = estoqueAtual + antiga - nova;
 
@@ -685,36 +728,6 @@ export default function PedidosVenda() {
               alert(`Erro ao atualizar estoque de ${produto.nome}`);
               return;
             }
-          }
-        } else {
-          const payloadAtualizacao = {
-            cliente_id: clienteSelecionado?.id || null,
-            cliente_nome: clienteSelecionado?.nome || "Consumidor",
-            total: totalPedido,
-            lucro: lucroPedido,
-            status: "fechado",
-          };
-
-          const { error: updateVendaError } = await supabase
-            .from("vendas")
-            .update(payloadAtualizacao)
-            .eq("id", pedidoEditandoId);
-
-          if (updateVendaError) {
-            console.error(updateVendaError);
-            alert("Erro ao atualizar pedido");
-            return;
-          }
-
-          const { error: deleteItensError } = await supabase
-            .from("itens_venda")
-            .delete()
-            .eq("venda_id", pedidoEditandoId);
-
-          if (deleteItensError) {
-            console.error(deleteItensError);
-            alert("Erro ao remover itens antigos");
-            return;
           }
         }
 
@@ -763,7 +776,7 @@ export default function PedidosVenda() {
 
       const qtdPorProduto = {};
       for (const item of itensVenda || []) {
-        const produtoId = Number(item.produto_id);
+        const produtoId = String(item.produto_id);
 
         if (!produtoId) continue;
 
@@ -771,21 +784,23 @@ export default function PedidosVenda() {
           Number(qtdPorProduto[produtoId] || 0) + Number(item.quantidade || 0);
       }
 
-      const produtoIds = Object.keys(qtdPorProduto)
-        .map(Number)
-        .filter((id) => Number.isFinite(id) && id > 0);
+      const produtoIds = Object.keys(qtdPorProduto).filter(
+        (id) => id && id !== "null" && id !== "undefined"
+      );
 
       if (produtoIds.length > 0) {
-        const { data: produtosBanco, error: produtosBancoError } = await supabase
-          .from("produtos")
-          .select("id, estoque, nome")
-          .in("id", produtoIds);
+        const { data: produtosBanco, error: produtosBancoError } =
+          await supabase
+            .from("produtos")
+            .select("id, estoque, nome")
+            .in("id", produtoIds);
 
         if (produtosBancoError) {
           console.error(produtosBancoError);
         } else {
           for (const produto of produtosBanco || []) {
-            const qtd = Number(qtdPorProduto[produto.id] || 0);
+            const produtoId = String(produto.id);
+            const qtd = Number(qtdPorProduto[produtoId] || 0);
             const estoqueAtual = Number(produto.estoque || 0);
             const estoqueFinal = estoqueAtual + qtd;
 
@@ -857,14 +872,45 @@ export default function PedidosVenda() {
             </button>
           </div>
 
-          <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-6 py-4 md:flex-row md:items-center md:justify-between">
-            <input
-              type="text"
-              placeholder="Buscar pedido ou cliente"
-              value={buscaPedido}
-              onChange={(e) => setBuscaPedido(e.target.value)}
-              className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-4 py-2 outline-none"
-            />
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <input
+                type="text"
+                placeholder="Buscar pedido ou cliente"
+                value={buscaPedido}
+                onChange={(e) => setBuscaPedido(e.target.value)}
+                className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-4 py-2 outline-none"
+              />
+
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => setDataInicio(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-600 outline-none"
+                />
+
+                <input
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => setDataFim(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-600 outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBuscaPedido("");
+                    setDataInicio("");
+                    setDataFim("");
+                    setFiltroStatus("todos");
+                  }}
+                  className="rounded-xl border bg-white px-4 py-2 text-slate-600 hover:bg-slate-50"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
 
             <div className="flex gap-2">
               <button
