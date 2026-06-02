@@ -46,12 +46,8 @@ export default function Home() {
 
       // CLIENTES
       const { count: totalClientes, error: erroClientes } =
-        await supabase
-          .from("clientes")
-          .select("*", {
-            count: "exact",
-            head: true,
-          });
+        await
+          supabase.from("produtos").select("*");
 
       if (erroClientes) throw erroClientes;
 
