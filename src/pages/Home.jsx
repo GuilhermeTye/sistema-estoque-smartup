@@ -1,11 +1,22 @@
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
 import logoSmartUp from "../assets/logo.png";
 
-function ActionCard({ title, description, buttonText, onClick, colorClass }) {
+function ActionCard({
+  title,
+  description,
+  buttonText,
+  onClick,
+  colorClass,
+}) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
       <h3 className="text-lg font-black text-slate-900">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+
+      <p className="mt-2 text-sm leading-6 text-slate-500">
+        {description}
+      </p>
 
       <button
         onClick={onClick}
@@ -20,6 +31,66 @@ function ActionCard({ title, description, buttonText, onClick, colorClass }) {
 export default function Home() {
   const navigate = useNavigate();
 
+  const [clientes, setClientes] = useState(0);
+  const [produtos, setProdutos] = useState(0);
+  const [faturamento, setFaturamento] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    carregarDados();
+  }, []);
+
+  async function carregarDados() {
+    try {
+      setLoading(true);
+
+      // CLIENTES
+      const { count: totalClientes, error: erroClientes } =
+        await supabase
+          .from("clientes")
+          .select("*", {
+            count: "exact",
+            head: true,
+          });
+
+      if (erroClientes) throw erroClientes;
+
+      // PRODUTOS
+      const { count: totalProdutos, error: erroProdutos } =
+        await supabase
+          .from("produtos")
+          .select("*", {
+            count: "exact",
+            head: true,
+          });
+
+      if (erroProdutos) throw erroProdutos;
+
+      // VENDAS
+      const { data: vendas, error: erroVendas } =
+        await supabase
+          .from("vendas")
+          .select("valor_total");
+
+      if (erroVendas) throw erroVendas;
+
+      const totalFaturamento =
+        vendas?.reduce(
+          (total, venda) =>
+            total + Number(venda.valor_total || 0),
+          0
+        ) || 0;
+
+      setClientes(totalClientes || 0);
+      setProdutos(totalProdutos || 0);
+      setFaturamento(totalFaturamento);
+    } catch (error) {
+      console.error("Erro ao carregar dashboard:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-[calc(100vh-80px)] bg-gradient-to-b from-white to-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-10">
@@ -31,7 +102,10 @@ export default function Home() {
 
             <h1 className="mt-5 text-4xl font-black leading-tight text-slate-900 md:text-6xl">
               Gestão moderna para
-              <span className="text-[#2AB7B0]"> vendas, estoque </span>
+              <span className="text-[#2AB7B0]">
+                {" "}
+                vendas, estoque{" "}
+              </span>
               e clientes
             </h1>
 
@@ -65,10 +139,12 @@ export default function Home() {
                   alt="Logo Smart Up"
                   className="h-16 w-16 object-contain"
                 />
+
                 <div>
                   <h2 className="text-2xl font-black text-slate-900">
                     Smart Up
                   </h2>
+
                   <p className="text-sm text-slate-500">
                     Cerro Azul • Painel SaaS
                   </p>
@@ -77,30 +153,50 @@ export default function Home() {
 
               <div className="mt-8 grid gap-4">
                 <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm text-slate-500">Faturamento</p>
+                  <p className="text-sm text-slate-500">
+                    Faturamento
+                  </p>
+
                   <h3 className="mt-1 text-2xl font-black text-[#EE6D46]">
-                    R$ 0,00
+                    {loading
+                      ? "Carregando..."
+                      : faturamento.toLocaleString(
+                          "pt-BR",
+                          {
+                            style: "currency",
+                            currency: "BRL",
+                          }
+                        )}
                   </h3>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-sm text-slate-500">Clientes</p>
+                    <p className="text-sm text-slate-500">
+                      Clientes
+                    </p>
+
                     <h3 className="mt-1 text-xl font-black text-[#0B7285]">
-                      0
+                      {loading ? "..." : clientes}
                     </h3>
                   </div>
 
                   <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-sm text-slate-500">Produtos</p>
+                    <p className="text-sm text-slate-500">
+                      Produtos
+                    </p>
+
                     <h3 className="mt-1 text-xl font-black text-[#2AB7B0]">
-                      0
+                      {loading ? "..." : produtos}
                     </h3>
                   </div>
                 </div>
 
                 <div className="rounded-2xl bg-[#2AB7B0] p-4 text-white">
-                  <p className="text-sm text-white/80">Pronto para vender</p>
+                  <p className="text-sm text-white/80">
+                    Pronto para vender
+                  </p>
+
                   <h3 className="mt-1 text-xl font-black">
                     Sistema profissional ativo
                   </h3>
