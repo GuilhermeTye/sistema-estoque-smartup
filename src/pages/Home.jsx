@@ -12,7 +12,9 @@ function ActionCard({
 }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-      <h3 className="text-lg font-black text-slate-900">{title}</h3>
+      <h3 className="text-lg font-black text-slate-900">
+        {title}
+      </h3>
 
       <p className="mt-2 text-sm leading-6 text-slate-500">
         {description}
@@ -31,9 +33,14 @@ function ActionCard({
 export default function Home() {
   const navigate = useNavigate();
 
-  const [clientes, setClientes] = useState(0);
-  const [produtos, setProdutos] = useState(0);
-  const [faturamento, setFaturamento] = useState(0);
+  const [dados, setDados] = useState({
+    totalProdutos: 0,
+    totalClientes: 0,
+    totalVendas: 0,
+    faturamento: 0,
+    lucro: 0,
+  });
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,48 +51,56 @@ export default function Home() {
     try {
       setLoading(true);
 
-      // CLIENTES
-      const { count: totalClientes, error: erroClientes } =
-        await
-          supabase.from("produtos").select("*");
+      const [
+        { data: produtos, error: erroProdutos },
+        { data: clientes, error: erroClientes },
+        { data: vendas, error: erroVendas },
+      ] = await Promise.all([
+        supabase.from("produtos").select("*"),
+        supabase.from("clientes").select("*"),
+        supabase.from("vendas").select("*"),
+      ]);
 
-      if (erroClientes) throw erroClientes;
+      if (erroProdutos || erroClientes || erroVendas) {
+        console.error(
+          erroProdutos || erroClientes || erroVendas
+        );
+        return;
+      }
 
-      // PRODUTOS
-      const { count: totalProdutos, error: erroProdutos } =
-        await supabase
-          .from("produtos")
-          .select("*", {
-            count: "exact",
-            head: true,
-          });
+      const faturamento = (vendas || []).reduce(
+        (acc, item) => acc + Number(item.total || 0),
+        0
+      );
 
-      if (erroProdutos) throw erroProdutos;
+      const lucro = (vendas || []).reduce(
+        (acc, item) => acc + Number(item.lucro || 0),
+        0
+      );
 
-      // VENDAS
-      const { data: vendas, error: erroVendas } =
-        await supabase
-          .from("vendas")
-          .select("valor_total");
+      setDados({
+        totalProdutos: (produtos || []).length,
+        totalClientes: (clientes || []).length,
+        totalVendas: (vendas || []).length,
+        faturamento,
+        lucro,
+      });
 
-      if (erroVendas) throw erroVendas;
-
-      const totalFaturamento =
-        vendas?.reduce(
-          (total, venda) =>
-            total + Number(venda.valor_total || 0),
-          0
-        ) || 0;
-
-      setClientes(totalClientes || 0);
-      setProdutos(totalProdutos || 0);
-      setFaturamento(totalFaturamento);
+      console.log("Produtos:", produtos);
+      console.log("Clientes:", clientes);
+      console.log("Vendas:", vendas);
     } catch (error) {
-      console.error("Erro ao carregar dashboard:", error);
+      console.error(error);
     } finally {
       setLoading(false);
     }
   }
+
+  const moeda = (valor) =>
+    Number(valor || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
 
   return (
     <div className="min-h-[calc(100vh-80px)] bg-gradient-to-b from-white to-slate-50">
@@ -155,14 +170,8 @@ export default function Home() {
 
                   <h3 className="mt-1 text-2xl font-black text-[#EE6D46]">
                     {loading
-                      ? "Carregando..."
-                      : faturamento.toLocaleString(
-                          "pt-BR",
-                          {
-                            style: "currency",
-                            currency: "BRL",
-                          }
-                        )}
+                      ? "..."
+                      : moeda(dados.faturamento)}
                   </h3>
                 </div>
 
@@ -173,7 +182,9 @@ export default function Home() {
                     </p>
 
                     <h3 className="mt-1 text-xl font-black text-[#0B7285]">
-                      {loading ? "..." : clientes}
+                      {loading
+                        ? "..."
+                        : dados.totalClientes}
                     </h3>
                   </div>
 
@@ -183,18 +194,34 @@ export default function Home() {
                     </p>
 
                     <h3 className="mt-1 text-xl font-black text-[#2AB7B0]">
-                      {loading ? "..." : produtos}
+                      {loading
+                        ? "..."
+                        : dados.totalProdutos}
                     </h3>
                   </div>
                 </div>
 
                 <div className="rounded-2xl bg-[#2AB7B0] p-4 text-white">
                   <p className="text-sm text-white/80">
-                    Pronto para vender
+                    Total de Vendas
                   </p>
 
                   <h3 className="mt-1 text-xl font-black">
-                    Sistema profissional ativo
+                    {loading
+                      ? "..."
+                      : dados.totalVendas}
+                  </h3>
+                </div>
+
+                <div className="rounded-2xl bg-[#0B7285] p-4 text-white">
+                  <p className="text-sm text-white/80">
+                    Lucro Estimado
+                  </p>
+
+                  <h3 className="mt-1 text-xl font-black">
+                    {loading
+                      ? "..."
+                      : moeda(dados.lucro)}
                   </h3>
                 </div>
               </div>
