@@ -19,10 +19,24 @@ export default function Produtos() {
   const [pesquisa, setPesquisa] = useState("");
   const [filtroEstoque, setFiltroEstoque] = useState("todos");
   const [produtoEditando, setProdutoEditando] = useState(null);
+  const [empresaId, setEmpresaId] = useState(null);
+
+ useEffect(() => {
+  if (empresaId) {
+    carregarProdutos();
+  }
+}, [empresaId]);
 
   useEffect(() => {
-    carregarProdutos();
-  }, []);
+  const empresa = localStorage.getItem("smartup_empresa");
+
+  if (!empresa) {
+    alert("Empresa não identificada.");
+    return;
+  }
+
+  setEmpresaId(empresa);
+}, []);
 
   async function carregarProdutos() {
     try {
@@ -31,6 +45,7 @@ export default function Produtos() {
       const { data, error } = await supabase
         .from("produtos")
         .select("*")
+        .eq("empresa_id", empresaId)
         .order("nome", { ascending: true });
 
       if (error) {
@@ -147,12 +162,14 @@ export default function Produtos() {
           custo: Number(p.custo),
           preco: Number(p.preco),
           estoque: Number(p.estoque),
+          empresa_id: empresaId,
         };
 
         const { error } = await supabase
           .from("produtos")
           .update(payload)
-          .eq("id", produtoEditando.id);
+          .eq("id", produtoEditando.id)
+          .eq("empresa_id", empresaId);;
 
         if (error) {
           console.error(error);
@@ -198,7 +215,11 @@ export default function Produtos() {
     if (!window.confirm("Deseja excluir este produto?")) return;
 
     try {
-      const { error } = await supabase.from("produtos").delete().eq("id", id);
+      const { error } = await supabase
+      .from("produtos")
+      .delete()
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
 
       if (error) {
         console.error(error);
@@ -365,7 +386,60 @@ export default function Produtos() {
           </div>
         </div>
       )}
+      <div className="mb-6 grid gap-4 md:grid-cols-4">
+  <div className="rounded-3xl bg-white p-5 shadow">
+    <p className="text-sm text-slate-500">Produtos</p>
+    <h2 className="text-3xl font-black">
+      {produtos.length}
+    </h2>
+  </div>
 
+  <div className="rounded-3xl bg-white p-5 shadow">
+    <p className="text-sm text-slate-500">Valor em Estoque</p>
+    <h2 className="text-3xl font-black text-[#0C7886]">
+      {moeda(
+        produtos.reduce(
+          (t, p) =>
+            t +
+            Number(p.custo || 0) *
+              Number(p.estoque || 0),
+          0
+        )
+      )}
+    </h2>
+  </div>
+
+  <div className="rounded-3xl bg-white p-5 shadow">
+    <p className="text-sm text-slate-500">
+      Produtos sem estoque
+    </p>
+    <h2 className="text-3xl font-black text-red-500">
+      {
+        produtos.filter(
+          (p) => Number(p.estoque || 0) <= 0
+        ).length
+      }
+    </h2>
+  </div>
+
+  <div className="rounded-3xl bg-white p-5 shadow">
+    <p className="text-sm text-slate-500">
+      Lucro Potencial
+    </p>
+    <h2 className="text-3xl font-black text-green-600">
+      {moeda(
+        produtos.reduce(
+          (t, p) =>
+            t +
+            (Number(p.preco || 0) -
+              Number(p.custo || 0)) *
+              Number(p.estoque || 0),
+          0
+        )
+      )}
+    </h2>
+  </div>
+</div>
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b p-4">
           <h2 className="font-bold text-slate-700">Lista de produtos</h2>
@@ -384,6 +458,7 @@ export default function Produtos() {
                   <th className="p-3">Código</th>
                   <th className="p-3">Custo</th>
                   <th className="p-3">Venda</th>
+                  <th className="p-3">Lucro</th>
                   <th className="p-3">Estoque</th>
                   <th className="p-3">Ações</th>
                 </tr>
@@ -396,6 +471,7 @@ export default function Produtos() {
                     <td className="p-3">{p.codigo || "-"}</td>
                     <td className="p-3">{moeda(p.custo)}</td>
                     <td className="p-3">{moeda(p.preco)}</td>
+                    <td className="p-3 font-bold text-green-600">{moeda( Number(p.preco || 0) -Number(p.custo || 0))}</td>
                     <td className="p-3">{p.estoque}</td>
 
                     <td className="p-3">
