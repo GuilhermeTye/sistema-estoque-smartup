@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabase";
 import logoSmartUp from "../assets/logo.png";
 
 export default function Login() {
@@ -10,6 +11,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [entrando, setEntrando] = useState(false);
+  const [erro, setErro] = useState("");
 
   if (!loading && user) {
     return <Navigate to="/" replace />;
@@ -18,13 +20,15 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault();
 
+    setErro("");
+
     if (!email.trim()) {
-      alert("Informe o email");
+      setErro("Informe seu email.");
       return;
     }
 
     if (!senha.trim()) {
-      alert("Informe a senha");
+      setErro("Informe sua senha.");
       return;
     }
 
@@ -34,73 +38,124 @@ export default function Login() {
       const { error } = await login(email, senha);
 
       if (error) {
-        console.error(error);
-        alert("Email ou senha inválidos");
+        setErro("Email ou senha inválidos.");
         return;
       }
+
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        setErro("Usuário não encontrado.");
+        return;
+      }
+
+      const { data: usuario, error: usuarioError } = await supabase
+        .from("usuarios")
+        .select("empresa_id,nome")
+        .eq("id", authUser.id)
+        .single();
+
+      if (usuarioError || !usuario) {
+        setErro("Usuário sem empresa vinculada.");
+        return;
+      }
+
+      localStorage.setItem(
+        "smartup_empresa",
+        usuario.empresa_id
+      );
+
+      localStorage.setItem(
+        "smartup_usuario",
+        JSON.stringify(usuario)
+      );
 
       navigate("/", { replace: true });
     } catch (error) {
       console.error(error);
-      alert("Erro ao entrar");
+      setErro("Erro ao realizar login.");
     } finally {
       setEntrando(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0B7285] via-[#2AB7B0] to-[#EE6D46] p-6">
+      <div className="absolute inset-0 opacity-10">
+        <img
+          src={logoSmartUp}
+          alt=""
+          className="w-full h-full object-contain"
+        />
+      </div>
+
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm"
+        className="relative z-10 w-full max-w-md bg-white/95 backdrop-blur rounded-3xl shadow-2xl p-8"
       >
-        <div className="mb-6 flex items-center gap-3">
+        <div className="flex flex-col items-center mb-8">
           <img
             src={logoSmartUp}
-            alt="Logo Smart Up"
-            className="h-14 w-14 object-contain"
+            alt="SmartUp"
+            className="w-24 h-24 object-contain mb-4"
           />
-          <div>
-            <h1 className="text-2xl font-black text-slate-900">Smart Up</h1>
-            <p className="text-sm text-slate-500">Entrar no sistema</p>
-          </div>
+
+          <h1 className="text-3xl font-black text-slate-800">
+            SmartUp ERP
+          </h1>
+
+          <p className="text-slate-500 mt-1">
+            Gestão Inteligente para Empresas
+          </p>
         </div>
 
+        {erro && (
+          <div className="mb-4 rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-600">
+            {erro}
+          </div>
+        )}
+
         <div className="mb-4">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">
+          <label className="block mb-2 font-semibold text-slate-700">
             Email
           </label>
+
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#2AB7B0]"
-            placeholder="seuemail@exemplo.com"
-            autoComplete="email"
+            placeholder="contato@empresa.com"
+            className="w-full border border-slate-300 rounded-2xl px-4 py-3 focus:border-[#2AB7B0] focus:ring-2 focus:ring-[#2AB7B0]/20 outline-none"
           />
         </div>
 
         <div className="mb-6">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">
+          <label className="block mb-2 font-semibold text-slate-700">
             Senha
           </label>
+
           <input
             type="password"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
-            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#2AB7B0]"
             placeholder="********"
-            autoComplete="current-password"
+            className="w-full border border-slate-300 rounded-2xl px-4 py-3 focus:border-[#2AB7B0] focus:ring-2 focus:ring-[#2AB7B0]/20 outline-none"
           />
         </div>
 
         <button
           type="submit"
           disabled={entrando}
-          className="w-full rounded-2xl bg-[#2AB7B0] py-3 font-bold text-white hover:bg-[#0B7285] disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-2xl bg-[#2AB7B0] py-3 font-bold text-white transition-all hover:bg-[#0B7285] hover:scale-[1.02] disabled:opacity-50"
         >
-          {entrando ? "Entrando..." : "Entrar"}
+          {entrando ? "Entrando..." : "Entrar no Sistema"}
         </button>
+
+        <div className="mt-6 text-center text-sm text-slate-500">
+          © {new Date().getFullYear()} SmartUp ERP
+        </div>
       </form>
     </div>
   );
