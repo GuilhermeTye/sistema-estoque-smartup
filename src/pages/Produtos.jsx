@@ -184,6 +184,10 @@ async function carregarProdutos() {
           estoque: Number(p.estoque),
           empresa_id: empresaId,
         }));
+            console.log("EMPRESA ID:", empresaId);
+            console.log("LOCAL STORAGE:",
+            localStorage.getItem("smartup_empresa"));
+            console.log(payload);
 
         const { error } = await supabase.from("produtos").insert(payload);
 
