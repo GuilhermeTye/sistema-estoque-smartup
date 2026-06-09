@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { getEmpresaId } from "../utils/empresa";
 
 function formatarCPF(valor) {
   return valor
@@ -32,12 +33,20 @@ export default function Clientes() {
   }, []);
 
   async function carregarClientes() {
+    const empresaId = getEmpresaId();
+
+    if (!empresaId) {
+      alert("Empresa não identificada.");
+      return;
+    }
+
     try {
       setCarregando(true);
 
       const { data, error } = await supabase
         .from("clientes")
         .select("*")
+        .eq("empresa_id", empresaId)
         .order("nome", { ascending: true });
 
       if (error) {
@@ -73,6 +82,13 @@ export default function Clientes() {
   }
 
   async function salvarCliente() {
+    const empresaId = getEmpresaId();
+
+    if (!empresaId) {
+      alert("Empresa não identificada.");
+      return;
+    }
+
     if (!form.nome.trim()) {
       alert("Nome obrigatório");
       return;
@@ -104,6 +120,7 @@ export default function Clientes() {
         email: form.email.trim(),
         cidade: form.cidade.trim(),
         cpf: form.cpf.trim(),
+        empresa_id: empresaId,
       };
 
       const { error } = await supabase.from("clientes").insert([payload]);
@@ -119,7 +136,7 @@ export default function Clientes() {
           return;
         }
 
-        alert("Erro ao salvar cliente");
+        alert(error.message || "Erro ao salvar cliente");
         return;
       }
 
@@ -142,11 +159,22 @@ export default function Clientes() {
   }
 
   async function deletarCliente(id) {
+    const empresaId = getEmpresaId();
+
+    if (!empresaId) {
+      alert("Empresa não identificada.");
+      return;
+    }
+
     const confirmar = window.confirm("Deseja excluir este cliente?");
     if (!confirmar) return;
 
     try {
-      const { error } = await supabase.from("clientes").delete().eq("id", id);
+      const { error } = await supabase
+        .from("clientes")
+        .delete()
+        .eq("id", id)
+        .eq("empresa_id", empresaId);
 
       if (error) {
         console.error(error);
