@@ -21,44 +21,41 @@ export default function Produtos() {
   const [filtroEstoque, setFiltroEstoque] = useState("todos");
   const [produtoEditando, setProdutoEditando] = useState(null);
 
-  --1
   useEffect(() => {
-  carregarProdutos();
-}, []);
+    carregarProdutos();
+  }, []);
 
---2
-async function carregarProdutos() {
-  const empresaId = getEmpresaId();
+  async function carregarProdutos() {
+    const empresaId = getEmpresaId();
 
-  if (!empresaId) {
-    alert("Empresa não identificada");
-    return;
-  }
-
-  try {
-    setCarregando(true);
-
-    const { data, error } = await supabase
-      .from("produtos")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .order("nome", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      alert("Erro ao carregar produtos");
+    if (!empresaId) {
+      alert("Empresa não identificada");
       return;
     }
 
-    setProdutos(data || []);
-  } catch (error) {
-    console.error(error);
-    alert("Erro inesperado ao carregar produtos");
-  } finally {
-    setCarregando(false);
+    try {
+      setCarregando(true);
+
+      const { data, error } = await supabase
+        .from("produtos")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .order("nome", { ascending: true });
+
+      if (error) {
+        console.error(error);
+        alert("Erro ao carregar produtos");
+        return;
+      }
+
+      setProdutos(data || []);
+    } catch (error) {
+      console.error(error);
+      alert("Erro inesperado ao carregar produtos");
+    } finally {
+      setCarregando(false);
+    }
   }
-}
-  
 
   const produtosFiltrados = useMemo(() => {
     const termo = pesquisa.toLowerCase().trim();
@@ -123,18 +120,15 @@ async function carregarProdutos() {
   }
 
   async function salvarProdutos() {
-  const empresaId = getEmpresaId();
+    const empresaId = getEmpresaId();
 
-  const produtosValidos = forms.filter(
-    (p) => p.nome.trim()
-  );
+    if (!empresaId) {
+      alert("Empresa não encontrada");
+      return;
+    }
 
-  console.log("EMPRESA:", empresaId);
+    const produtosValidos = forms.filter((p) => p.nome.trim());
 
-  if (!empresaId) {
-    alert("Empresa não encontrada");
-    return;
-  }
     if (produtosValidos.length === 0) {
       alert("Cadastre pelo menos um produto");
       return;
@@ -176,11 +170,11 @@ async function carregarProdutos() {
           .from("produtos")
           .update(payload)
           .eq("id", produtoEditando.id)
-          .eq("empresa_id", empresaId);;
+          .eq("empresa_id", empresaId);
 
         if (error) {
           console.error(error);
-          alert("Erro ao atualizar produto");
+          alert(error.message || "Erro ao atualizar produto");
           return;
         }
 
@@ -194,20 +188,14 @@ async function carregarProdutos() {
           estoque: Number(p.estoque),
           empresa_id: empresaId,
         }));
-            console.log("EMPRESA ID:", empresaId);
-            console.log("PAYLOAD:", payload);
 
-        const { data, error } = await supabase
-          .from("produtos")
-          .insert(payload)
-          .select();
+        console.log("PAYLOAD INSERT:", payload);
 
-          console.log("RESULTADO:", data);
-          console.log("ERRO:", error);
+        const { error } = await supabase.from("produtos").insert(payload);
 
         if (error) {
           console.error(error);
-          alert("Erro ao salvar produtos");
+          alert(error.message || "Erro ao salvar produtos");
           return;
         }
 
@@ -228,29 +216,34 @@ async function carregarProdutos() {
   }
 
   async function deletarProduto(id) {
-  const empresaId = getEmpresaId();
+    const empresaId = getEmpresaId();
 
-  if (!window.confirm("Deseja excluir este produto?")) return;
-
-  try {
-    const { error } = await supabase
-      .from("produtos")
-      .delete()
-      .eq("id", id)
-      .eq("empresa_id", empresaId);
-
-    if (error) {
-      console.error(error);
-      alert("Erro ao excluir produto");
+    if (!empresaId) {
+      alert("Empresa não encontrada");
       return;
     }
 
-    await carregarProdutos();
-  } catch (error) {
-    console.error(error);
-    alert("Erro inesperado ao excluir produto");
+    if (!window.confirm("Deseja excluir este produto?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("produtos")
+        .delete()
+        .eq("id", id)
+        .eq("empresa_id", empresaId);
+
+      if (error) {
+        console.error(error);
+        alert(error.message || "Erro ao excluir produto");
+        return;
+      }
+
+      await carregarProdutos();
+    } catch (error) {
+      console.error(error);
+      alert("Erro inesperado ao excluir produto");
+    }
   }
-}
 
   const moeda = (v) =>
     Number(v || 0).toLocaleString("pt-BR", {
@@ -404,60 +397,48 @@ async function carregarProdutos() {
           </div>
         </div>
       )}
+
       <div className="mb-6 grid gap-4 md:grid-cols-4">
-  <div className="rounded-3xl bg-white p-5 shadow">
-    <p className="text-sm text-slate-500">Produtos</p>
-    <h2 className="text-3xl font-black">
-      {produtos.length}
-    </h2>
-  </div>
+        <div className="rounded-3xl bg-white p-5 shadow">
+          <p className="text-sm text-slate-500">Produtos</p>
+          <h2 className="text-3xl font-black">{produtos.length}</h2>
+        </div>
 
-  <div className="rounded-3xl bg-white p-5 shadow">
-    <p className="text-sm text-slate-500">Valor em Estoque</p>
-    <h2 className="text-3xl font-black text-[#0C7886]">
-      {moeda(
-        produtos.reduce(
-          (t, p) =>
-            t +
-            Number(p.custo || 0) *
-              Number(p.estoque || 0),
-          0
-        )
-      )}
-    </h2>
-  </div>
+        <div className="rounded-3xl bg-white p-5 shadow">
+          <p className="text-sm text-slate-500">Valor em Estoque</p>
+          <h2 className="text-3xl font-black text-[#0C7886]">
+            {moeda(
+              produtos.reduce(
+                (t, p) => t + Number(p.custo || 0) * Number(p.estoque || 0),
+                0
+              )
+            )}
+          </h2>
+        </div>
 
-  <div className="rounded-3xl bg-white p-5 shadow">
-    <p className="text-sm text-slate-500">
-      Produtos sem estoque
-    </p>
-    <h2 className="text-3xl font-black text-red-500">
-      {
-        produtos.filter(
-          (p) => Number(p.estoque || 0) <= 0
-        ).length
-      }
-    </h2>
-  </div>
+        <div className="rounded-3xl bg-white p-5 shadow">
+          <p className="text-sm text-slate-500">Produtos sem estoque</p>
+          <h2 className="text-3xl font-black text-red-500">
+            {produtos.filter((p) => Number(p.estoque || 0) <= 0).length}
+          </h2>
+        </div>
 
-  <div className="rounded-3xl bg-white p-5 shadow">
-    <p className="text-sm text-slate-500">
-      Lucro Potencial
-    </p>
-    <h2 className="text-3xl font-black text-green-600">
-      {moeda(
-        produtos.reduce(
-          (t, p) =>
-            t +
-            (Number(p.preco || 0) -
-              Number(p.custo || 0)) *
-              Number(p.estoque || 0),
-          0
-        )
-      )}
-    </h2>
-  </div>
-</div>
+        <div className="rounded-3xl bg-white p-5 shadow">
+          <p className="text-sm text-slate-500">Lucro Potencial</p>
+          <h2 className="text-3xl font-black text-green-600">
+            {moeda(
+              produtos.reduce(
+                (t, p) =>
+                  t +
+                  (Number(p.preco || 0) - Number(p.custo || 0)) *
+                    Number(p.estoque || 0),
+                0
+              )
+            )}
+          </h2>
+        </div>
+      </div>
+
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b p-4">
           <h2 className="font-bold text-slate-700">Lista de produtos</h2>
@@ -489,7 +470,9 @@ async function carregarProdutos() {
                     <td className="p-3">{p.codigo || "-"}</td>
                     <td className="p-3">{moeda(p.custo)}</td>
                     <td className="p-3">{moeda(p.preco)}</td>
-                    <td className="p-3 font-bold text-green-600">{moeda( Number(p.preco || 0) -Number(p.custo || 0))}</td>
+                    <td className="p-3 font-bold text-green-600">
+                      {moeda(Number(p.preco || 0) - Number(p.custo || 0))}
+                    </td>
                     <td className="p-3">{p.estoque}</td>
 
                     <td className="p-3">
