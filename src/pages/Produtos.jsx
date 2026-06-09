@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { getEmpresaId } from "../utils/empresa";
 
 const produtoVazio = {
   nome: "",
@@ -19,49 +20,45 @@ export default function Produtos() {
   const [pesquisa, setPesquisa] = useState("");
   const [filtroEstoque, setFiltroEstoque] = useState("todos");
   const [produtoEditando, setProdutoEditando] = useState(null);
-  const [empresaId, setEmpresaId] = useState(null);
 
- useEffect(() => {
-  if (empresaId) {
-    carregarProdutos();
-  }
-}, [empresaId]);
-
+  --1
   useEffect(() => {
-  const empresa = localStorage.getItem("smartup_empresa");
+  carregarProdutos();
+}, []);
 
-  if (!empresa) {
-    alert("Empresa não identificada.");
+--2
+async function carregarProdutos() {
+  const empresaId = getEmpresaId();
+
+  if (!empresaId) {
+    alert("Empresa não identificada");
     return;
   }
 
-  setEmpresaId(empresa);
-}, []);
+  try {
+    setCarregando(true);
 
-  async function carregarProdutos() {
-    try {
-      setCarregando(true);
+    const { data, error } = await supabase
+      .from("produtos")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .order("nome", { ascending: true });
 
-      const { data, error } = await supabase
-        .from("produtos")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("nome", { ascending: true });
-
-      if (error) {
-        console.error(error);
-        alert("Erro ao carregar produtos");
-        return;
-      }
-
-      setProdutos(data || []);
-    } catch (error) {
+    if (error) {
       console.error(error);
-      alert("Erro inesperado ao carregar produtos");
-    } finally {
-      setCarregando(false);
+      alert("Erro ao carregar produtos");
+      return;
     }
+
+    setProdutos(data || []);
+  } catch (error) {
+    console.error(error);
+    alert("Erro inesperado ao carregar produtos");
+  } finally {
+    setCarregando(false);
   }
+}
+  
 
   const produtosFiltrados = useMemo(() => {
     const termo = pesquisa.toLowerCase().trim();
@@ -126,7 +123,7 @@ export default function Produtos() {
   }
 
   async function salvarProdutos() {
-    const produtosValidos = forms.filter((p) => p.nome.trim());
+  const empresaId = getEmpresaId();
 
     if (produtosValidos.length === 0) {
       alert("Cadastre pelo menos um produto");
@@ -185,6 +182,7 @@ export default function Produtos() {
           custo: Number(p.custo),
           preco: Number(p.preco),
           estoque: Number(p.estoque),
+          empresa_id: empresaId,
         }));
 
         const { error } = await supabase.from("produtos").insert(payload);
@@ -212,27 +210,29 @@ export default function Produtos() {
   }
 
   async function deletarProduto(id) {
-    if (!window.confirm("Deseja excluir este produto?")) return;
+  const empresaId = getEmpresaId();
 
-    try {
-      const { error } = await supabase
+  if (!window.confirm("Deseja excluir este produto?")) return;
+
+  try {
+    const { error } = await supabase
       .from("produtos")
       .delete()
       .eq("id", id)
       .eq("empresa_id", empresaId);
 
-      if (error) {
-        console.error(error);
-        alert("Erro ao excluir produto");
-        return;
-      }
-
-      await carregarProdutos();
-    } catch (error) {
+    if (error) {
       console.error(error);
-      alert("Erro inesperado ao excluir produto");
+      alert("Erro ao excluir produto");
+      return;
     }
+
+    await carregarProdutos();
+  } catch (error) {
+    console.error(error);
+    alert("Erro inesperado ao excluir produto");
   }
+}
 
   const moeda = (v) =>
     Number(v || 0).toLocaleString("pt-BR", {
