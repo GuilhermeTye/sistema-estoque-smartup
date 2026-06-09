@@ -125,6 +125,16 @@ async function carregarProdutos() {
   async function salvarProdutos() {
   const empresaId = getEmpresaId();
 
+  const produtosValidos = forms.filter(
+    (p) => p.nome.trim()
+  );
+
+  console.log("EMPRESA:", empresaId);
+
+  if (!empresaId) {
+    alert("Empresa não encontrada");
+    return;
+  }
     if (produtosValidos.length === 0) {
       alert("Cadastre pelo menos um produto");
       return;
@@ -185,11 +195,15 @@ async function carregarProdutos() {
           empresa_id: empresaId,
         }));
             console.log("EMPRESA ID:", empresaId);
-            console.log("LOCAL STORAGE:",
-            localStorage.getItem("smartup_empresa"));
-            console.log(payload);
+            console.log("PAYLOAD:", payload);
 
-        const { error } = await supabase.from("produtos").insert(payload);
+        const { data, error } = await supabase
+          .from("produtos")
+          .insert(payload)
+          .select();
+
+          console.log("RESULTADO:", data);
+          console.log("ERRO:", error);
 
         if (error) {
           console.error(error);
