@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { getEmpresaId } from "../utils/empresa";
 
 const CLIENTE_PADRAO = {
   id: null,
@@ -33,6 +34,17 @@ export default function PedidosVenda() {
   useEffect(() => {
     carregarTudo();
   }, []);
+
+  function getEmpresaAtual() {
+    const empresaId = getEmpresaId();
+
+    if (!empresaId) {
+      alert("Empresa não identificada.");
+      return null;
+    }
+
+    return empresaId;
+  }
 
   function formatarDataInput(data) {
     const ano = data.getFullYear();
@@ -76,6 +88,12 @@ export default function PedidosVenda() {
   }
 
   async function carregarTudo() {
+    const empresaId = getEmpresaAtual();
+    if (!empresaId) {
+      setCarregandoLista(false);
+      return;
+    }
+
     try {
       setCarregandoLista(true);
 
@@ -84,9 +102,23 @@ export default function PedidosVenda() {
         { data: clientesData, error: clientesError },
         { data: produtosData, error: produtosError },
       ] = await Promise.all([
-        supabase.from("vendas").select("*").order("id", { ascending: false }),
-        supabase.from("clientes").select("*").order("nome", { ascending: true }),
-        supabase.from("produtos").select("*").order("nome", { ascending: true }),
+        supabase
+          .from("vendas")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("id", { ascending: false }),
+
+        supabase
+          .from("clientes")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome", { ascending: true }),
+
+        supabase
+          .from("produtos")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome", { ascending: true }),
       ]);
 
       if (vendasError || clientesError || produtosError) {
@@ -160,48 +192,18 @@ export default function PedidosVenda() {
         <head>
           <title>Cupom do Pedido #${vendaId}</title>
           <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 20px;
-              color: #000;
-            }
-            h1 {
-              font-size: 20px;
-              margin-bottom: 10px;
-            }
-            .info {
-              margin-bottom: 15px;
-              font-size: 14px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 15px;
-            }
-            th, td {
-              border: 1px solid #ccc;
-              padding: 8px;
-              text-align: left;
-              font-size: 12px;
-            }
-            .total {
-              margin-top: 20px;
-              font-size: 18px;
-              font-weight: bold;
-            }
-            .rodape {
-              margin-top: 20px;
-              font-size: 12px;
-              color: #444;
-            }
+            body { font-family: Arial, sans-serif; padding: 20px; color: #000; }
+            h1 { font-size: 20px; margin-bottom: 10px; }
+            .info { margin-bottom: 15px; font-size: 14px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
+            .total { margin-top: 20px; font-size: 18px; font-weight: bold; }
+            .rodape { margin-top: 20px; font-size: 12px; color: #444; }
           </style>
         </head>
         <body>
           <h1>Cupom do Pedido #${vendaId}</h1>
-          <div class="info"><strong>Cliente:</strong> ${
-            clienteNome || "Consumidor"
-          }</div>
-
+          <div class="info"><strong>Cliente:</strong> ${clienteNome || "Consumidor"}</div>
           <table>
             <thead>
               <tr>
@@ -219,19 +221,15 @@ export default function PedidosVenda() {
                       <td>${item.nome}</td>
                       <td>${item.quantidade}</td>
                       <td>${moeda(Number(item.preco || 0))}</td>
-                      <td>${moeda(
-                        Number(item.preco || 0) * Number(item.quantidade || 0)
-                      )}</td>
+                      <td>${moeda(Number(item.preco || 0) * Number(item.quantidade || 0))}</td>
                     </tr>
                   `
                 )
                 .join("")}
             </tbody>
           </table>
-
           <div class="total">Total do pedido: ${moeda(totalCupom)}</div>
           <div class="rodape">Impresso pelo sistema Smart Up</div>
-
           <script>
             window.onload = function() {
               window.print();
@@ -255,10 +253,14 @@ export default function PedidosVenda() {
   }
 
   async function imprimirCupomExistente(pedido) {
+    const empresaId = getEmpresaAtual();
+    if (!empresaId) return;
+
     try {
       const { data: itensVenda, error } = await supabase
         .from("itens_venda")
         .select("*")
+        .eq("empresa_id", empresaId)
         .eq("venda_id", pedido.id);
 
       if (error) {
@@ -294,8 +296,7 @@ export default function PedidosVenda() {
         String(p.cliente_nome || "").toLowerCase().includes(texto);
 
       const status = normalizarStatus(p.status);
-      const bateStatus =
-        filtroStatus === "todos" ? true : status === filtroStatus;
+      const bateStatus = filtroStatus === "todos" ? true : status === filtroStatus;
 
       let bateData = true;
 
@@ -320,9 +321,7 @@ export default function PedidosVenda() {
 
   const clientesFiltrados = useMemo(() => {
     const termo = clienteBusca.trim().toLowerCase();
-    const clienteAtual = String(clienteSelecionado?.nome || "")
-      .trim()
-      .toLowerCase();
+    const clienteAtual = String(clienteSelecionado?.nome || "").trim().toLowerCase();
 
     if (!termo || termo === "consumidor") return [];
     if (termo === clienteAtual) return [];
@@ -360,8 +359,7 @@ export default function PedidosVenda() {
   const lucroPedido = useMemo(() => {
     return itens.reduce((acc, item) => {
       const totalLiquido = calcularTotalItem(item);
-      const custoTotal =
-        Number(item.custo || 0) * Number(item.quantidade || 0);
+      const custoTotal = Number(item.custo || 0) * Number(item.quantidade || 0);
       return acc + (totalLiquido - custoTotal);
     }, 0);
   }, [itens]);
@@ -461,10 +459,14 @@ export default function PedidosVenda() {
   }
 
   async function editarPedido(pedido) {
+    const empresaId = getEmpresaAtual();
+    if (!empresaId) return;
+
     try {
       const { data: itensVenda, error } = await supabase
         .from("itens_venda")
         .select("*")
+        .eq("empresa_id", empresaId)
         .eq("venda_id", pedido.id);
 
       if (error) {
@@ -513,6 +515,9 @@ export default function PedidosVenda() {
   }
 
   async function salvarPedido() {
+    const empresaId = getEmpresaAtual();
+    if (!empresaId) return;
+
     if (itens.length === 0) {
       alert("Adicione pelo menos um produto");
       return;
@@ -531,6 +536,7 @@ export default function PedidosVenda() {
 
       if (modo === "novo") {
         const payloadVenda = {
+          empresa_id: empresaId,
           cliente_id: clienteSelecionado?.id || null,
           cliente_nome: clienteSelecionado?.nome || "Consumidor",
           total: totalPedido,
@@ -557,6 +563,7 @@ export default function PedidosVenda() {
             subtotal - Number(item.custo || 0) * Number(item.quantidade || 0);
 
           return {
+            empresa_id: empresaId,
             venda_id: vendaCriada.id,
             produto_id: item.produto_id,
             nome_produto: item.nome,
@@ -593,6 +600,7 @@ export default function PedidosVenda() {
           const { error: estoqueError } = await supabase
             .from("produtos")
             .update({ estoque: novoEstoque })
+            .eq("empresa_id", empresaId)
             .eq("id", item.produto_id);
 
           if (estoqueError) {
@@ -620,6 +628,7 @@ export default function PedidosVenda() {
         const { data: itensAntigos, error: itensAntigosError } = await supabase
           .from("itens_venda")
           .select("*")
+          .eq("empresa_id", empresaId)
           .eq("venda_id", pedidoEditandoId);
 
         if (itensAntigosError) {
@@ -631,7 +640,6 @@ export default function PedidosVenda() {
         const qtdAntigaPorProduto = {};
         for (const item of itensAntigos || []) {
           const produtoId = String(item.produto_id);
-
           qtdAntigaPorProduto[produtoId] =
             Number(qtdAntigaPorProduto[produtoId] || 0) +
             Number(item.quantidade || 0);
@@ -640,7 +648,6 @@ export default function PedidosVenda() {
         const qtdNovaPorProduto = {};
         for (const item of itens) {
           const produtoId = String(item.produto_id);
-
           qtdNovaPorProduto[produtoId] =
             Number(qtdNovaPorProduto[produtoId] || 0) +
             Number(item.quantidade || 0);
@@ -667,6 +674,7 @@ export default function PedidosVenda() {
           const { data, error: produtosBancoError } = await supabase
             .from("produtos")
             .select("id, estoque, nome")
+            .eq("empresa_id", empresaId)
             .in("id", produtoIds);
 
           if (produtosBancoError) {
@@ -694,6 +702,7 @@ export default function PedidosVenda() {
         const { error: updateVendaError } = await supabase
           .from("vendas")
           .update(payloadAtualizacao)
+          .eq("empresa_id", empresaId)
           .eq("id", pedidoEditandoId);
 
         if (updateVendaError) {
@@ -705,6 +714,7 @@ export default function PedidosVenda() {
         const { error: deleteItensError } = await supabase
           .from("itens_venda")
           .delete()
+          .eq("empresa_id", empresaId)
           .eq("venda_id", pedidoEditandoId);
 
         if (deleteItensError) {
@@ -720,6 +730,7 @@ export default function PedidosVenda() {
             subtotal - Number(item.custo || 0) * Number(item.quantidade || 0);
 
           return {
+            empresa_id: empresaId,
             venda_id: pedidoEditandoId,
             produto_id: item.produto_id,
             nome_produto: item.nome,
@@ -753,6 +764,7 @@ export default function PedidosVenda() {
           const { error: estoqueError } = await supabase
             .from("produtos")
             .update({ estoque: estoqueFinal })
+            .eq("empresa_id", empresaId)
             .eq("id", produto.id);
 
           if (estoqueError) {
@@ -787,6 +799,9 @@ export default function PedidosVenda() {
   }
 
   async function excluirPedidoConfirmado() {
+    const empresaId = getEmpresaAtual();
+    if (!empresaId) return;
+
     if (!pedidoExcluir) return;
 
     try {
@@ -797,6 +812,7 @@ export default function PedidosVenda() {
       const { data: itensVenda, error: itensError } = await supabase
         .from("itens_venda")
         .select("*")
+        .eq("empresa_id", empresaId)
         .eq("venda_id", pedidoId);
 
       if (itensError) {
@@ -808,7 +824,6 @@ export default function PedidosVenda() {
       const qtdPorProduto = {};
       for (const item of itensVenda || []) {
         const produtoId = String(item.produto_id);
-
         if (!produtoId) continue;
 
         qtdPorProduto[produtoId] =
@@ -824,6 +839,7 @@ export default function PedidosVenda() {
           await supabase
             .from("produtos")
             .select("id, estoque, nome")
+            .eq("empresa_id", empresaId)
             .in("id", produtoIds);
 
         if (produtosBancoError) {
@@ -838,6 +854,7 @@ export default function PedidosVenda() {
             const { error: estoqueError } = await supabase
               .from("produtos")
               .update({ estoque: estoqueFinal })
+              .eq("empresa_id", empresaId)
               .eq("id", produto.id);
 
             if (estoqueError) {
@@ -850,6 +867,7 @@ export default function PedidosVenda() {
       const { error: deleteItensError } = await supabase
         .from("itens_venda")
         .delete()
+        .eq("empresa_id", empresaId)
         .eq("venda_id", pedidoId);
 
       if (deleteItensError) {
@@ -861,6 +879,7 @@ export default function PedidosVenda() {
       const { error: deleteVendaError } = await supabase
         .from("vendas")
         .delete()
+        .eq("empresa_id", empresaId)
         .eq("id", pedidoId);
 
       if (deleteVendaError) {
@@ -879,7 +898,6 @@ export default function PedidosVenda() {
       setExcluindo(false);
     }
   }
-
   return (
     <div className="bg-white p-6">
       {modo === "lista" ? (
