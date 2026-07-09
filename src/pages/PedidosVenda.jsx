@@ -421,6 +421,49 @@ export default function PedidosVenda() {
     setProdutoBusca("");
   }
 
+  function adicionarProdutoPorCodigo() {
+    const codigoDigitado = produtoBusca.trim();
+
+    if (!codigoDigitado) return;
+
+    const produtoEncontrado = produtos.find(
+      (produto) => String(produto.codigo || "").trim() === codigoDigitado
+    );
+
+    if (!produtoEncontrado) {
+      alert(`Nenhum produto encontrado com o código: ${codigoDigitado}`);
+      return;
+    }
+
+    adicionarProduto(produtoEncontrado);
+  }
+
+  function handleProdutoBuscaKeyDown(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+
+      const codigoDigitado = produtoBusca.trim();
+
+      if (!codigoDigitado) return;
+
+      const produtoExato = produtos.find(
+        (produto) => String(produto.codigo || "").trim() === codigoDigitado
+      );
+
+      if (produtoExato) {
+        adicionarProduto(produtoExato);
+        return;
+      }
+
+      if (produtosFiltrados.length === 1) {
+        adicionarProduto(produtosFiltrados[0]);
+        return;
+      }
+
+      adicionarProdutoPorCodigo();
+    }
+  }
+
   function atualizarItem(id, campo, valor) {
     setItens((prev) =>
       prev.map((item) => {
@@ -898,6 +941,7 @@ export default function PedidosVenda() {
       setExcluindo(false);
     }
   }
+
   return (
     <div className="bg-white p-6">
       {modo === "lista" ? (
@@ -1250,7 +1294,8 @@ export default function PedidosVenda() {
                   type="text"
                   value={produtoBusca}
                   onChange={(e) => setProdutoBusca(e.target.value)}
-                  placeholder="Pesquise por código ou descrição do produto"
+                  onKeyDown={handleProdutoBuscaKeyDown}
+                  placeholder="Bipe o código de barras ou pesquise por descrição"
                   className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-[#2AB7B0]"
                 />
 
