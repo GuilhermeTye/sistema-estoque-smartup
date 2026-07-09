@@ -25,6 +25,41 @@ export default function Produtos() {
     carregarProdutos();
   }, []);
 
+  function gerarCodigoBarras() {
+    const timestamp = Date.now().toString();
+
+    const aleatorio = Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
+
+    return `${timestamp}${aleatorio}`.slice(0, 13);
+  }
+
+  async function gerarCodigoUnico(empresaId) {
+    let codigoGerado = "";
+    let codigoExiste = true;
+
+    while (codigoExiste) {
+      codigoGerado = gerarCodigoBarras();
+
+      const { data, error } = await supabase
+        .from("produtos")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .eq("codigo", codigoGerado)
+        .limit(1);
+
+      if (error) {
+        console.error("Erro ao verificar código:", error);
+        throw error;
+      }
+
+      codigoExiste = data && data.length > 0;
+    }
+
+    return codigoGerado;
+  }
+
   async function carregarProdutos() {
     const empresaId = getEmpresaId();
 
@@ -80,7 +115,14 @@ export default function Produtos() {
     const { name, value } = e.target;
 
     setForms((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, [name]: value } : item))
+      prev.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              [name]: value,
+            }
+          : item
+      )
     );
   }
 
@@ -157,9 +199,36 @@ export default function Produtos() {
       if (produtoEditando) {
         const p = produtosValidos[0];
 
+        let codigoProduto = p.codigo.trim();
+
+        if (!codigoProduto) {
+          codigoProduto = await gerarCodigoUnico(empresaId);
+        }
+
+        const { data: codigoDuplicado, error: erroCodigo } = await supabase
+          .from("produtos")
+          .select("id")
+          .eq("empresa_id", empresaId)
+          .eq("codigo", codigoProduto)
+          .neq("id", produtoEditando.id)
+          .limit(1);
+
+        if (erroCodigo) {
+          console.error(erroCodigo);
+          alert("Erro ao verificar código do produto");
+          return;
+        }
+
+        if (codigoDuplicado && codigoDuplicado.length > 0) {
+          alert(
+            `O código ${codigoProduto} já está sendo usado por outro produto`
+          );
+          return;
+        }
+
         const payload = {
           nome: p.nome.trim(),
-          codigo: p.codigo.trim(),
+          codigo: codigoProduto,
           custo: Number(p.custo),
           preco: Number(p.preco),
           estoque: Number(p.estoque),
@@ -180,18 +249,61 @@ export default function Produtos() {
 
         alert("Produto atualizado com sucesso");
       } else {
-        const payload = produtosValidos.map((p) => ({
-          nome: p.nome.trim(),
-          codigo: p.codigo.trim(),
-          custo: Number(p.custo),
-          preco: Number(p.preco),
-          estoque: Number(p.estoque),
-          empresa_id: empresaId,
-        }));
+        const payload = [];
+
+        for (const p of produtosValidos) {
+          let codigoProduto = p.codigo.trim();
+
+          if (!codigoProduto) {
+            codigoProduto = await gerarCodigoUnico(empresaId);
+          } else {
+            const { data: codigoDuplicado, error: erroCodigo } = await supabase
+              .from("produtos")
+              .select("id")
+              .eq("empresa_id", empresaId)
+              .eq("codigo", codigoProduto)
+              .limit(1);
+
+            if (erroCodigo) {
+              console.error(erroCodigo);
+              alert("Erro ao verificar código do produto");
+              return;
+            }
+
+            if (codigoDuplicado && codigoDuplicado.length > 0) {
+              alert(
+                `O código ${codigoProduto} já está sendo usado por outro produto`
+              );
+              return;
+            }
+          }
+
+          const codigoDuplicadoPayload = payload.some(
+            (produto) => produto.codigo === codigoProduto
+          );
+
+          if (codigoDuplicadoPayload) {
+            alert(
+              `O código ${codigoProduto} está repetido no cadastro atual`
+            );
+            return;
+          }
+
+          payload.push({
+            nome: p.nome.trim(),
+            codigo: codigoProduto,
+            custo: Number(p.custo),
+            preco: Number(p.preco),
+            estoque: Number(p.estoque),
+            empresa_id: empresaId,
+          });
+        }
 
         console.log("PAYLOAD INSERT:", payload);
 
-        const { error } = await supabase.from("produtos").insert(payload);
+        const { error } = await supabase
+          .from("produtos")
+          .insert(payload);
 
         if (error) {
           console.error(error);
@@ -223,7 +335,9 @@ export default function Produtos() {
       return;
     }
 
-    if (!window.confirm("Deseja excluir este produto?")) return;
+    if (!window.confirm("Deseja excluir este produto?")) {
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -254,7 +368,15 @@ export default function Produtos() {
   return (
     <div className="bg-white p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h1 className="text-3xl font-black text-slate-800">Produtos</h1>
+        <div>
+          <h1 className="text-3xl font-black text-slate-800">
+            Produtos
+          </h1>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Gerencie seus produtos e códigos de barras
+          </p>
+        </div>
 
         <button
           onClick={abrirNovoProduto}
@@ -266,7 +388,7 @@ export default function Produtos() {
 
       <div className="mb-6 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-3">
         <input
-          placeholder="Pesquisar por nome ou código..."
+          placeholder="Pesquisar por nome ou código de barras..."
           value={pesquisa}
           onChange={(e) => setPesquisa(e.target.value)}
           className="rounded-xl border p-3 outline-none focus:border-[#2AB7B0] md:col-span-2"
@@ -288,12 +410,15 @@ export default function Produtos() {
           <div className="mb-4 flex items-center justify-between gap-3 border-b pb-4">
             <div>
               <h2 className="font-bold text-slate-700">
-                {produtoEditando ? "Atualizar produto" : "Cadastro de produtos"}
+                {produtoEditando
+                  ? "Atualizar produto"
+                  : "Cadastro de produtos"}
               </h2>
+
               <p className="text-sm text-slate-500">
                 {produtoEditando
                   ? "Altere os dados do produto selecionado"
-                  : "Cadastre vários produtos de uma vez"}
+                  : "Deixe o código vazio para gerar automaticamente"}
               </p>
             </div>
 
@@ -325,7 +450,7 @@ export default function Produtos() {
 
                 <input
                   name="codigo"
-                  placeholder="Código"
+                  placeholder="Código de barras (automático)"
                   value={form.codigo}
                   onChange={(e) => handleChange(index, e)}
                   className="rounded-xl border bg-white p-3 outline-none focus:border-[#2AB7B0]"
@@ -334,6 +459,7 @@ export default function Produtos() {
                 <input
                   name="custo"
                   type="number"
+                  step="0.01"
                   placeholder="Custo"
                   value={form.custo}
                   onChange={(e) => handleChange(index, e)}
@@ -343,6 +469,7 @@ export default function Produtos() {
                 <input
                   name="preco"
                   type="number"
+                  step="0.01"
                   placeholder="Preço"
                   value={form.preco}
                   onChange={(e) => handleChange(index, e)}
@@ -401,15 +528,24 @@ export default function Produtos() {
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <div className="rounded-3xl bg-white p-5 shadow">
           <p className="text-sm text-slate-500">Produtos</p>
-          <h2 className="text-3xl font-black">{produtos.length}</h2>
+
+          <h2 className="text-3xl font-black">
+            {produtos.length}
+          </h2>
         </div>
 
         <div className="rounded-3xl bg-white p-5 shadow">
-          <p className="text-sm text-slate-500">Valor em Estoque</p>
+          <p className="text-sm text-slate-500">
+            Valor em Estoque
+          </p>
+
           <h2 className="text-3xl font-black text-[#0C7886]">
             {moeda(
               produtos.reduce(
-                (t, p) => t + Number(p.custo || 0) * Number(p.estoque || 0),
+                (t, p) =>
+                  t +
+                  Number(p.custo || 0) *
+                    Number(p.estoque || 0),
                 0
               )
             )}
@@ -417,20 +553,31 @@ export default function Produtos() {
         </div>
 
         <div className="rounded-3xl bg-white p-5 shadow">
-          <p className="text-sm text-slate-500">Produtos sem estoque</p>
+          <p className="text-sm text-slate-500">
+            Produtos sem estoque
+          </p>
+
           <h2 className="text-3xl font-black text-red-500">
-            {produtos.filter((p) => Number(p.estoque || 0) <= 0).length}
+            {
+              produtos.filter(
+                (p) => Number(p.estoque || 0) <= 0
+              ).length
+            }
           </h2>
         </div>
 
         <div className="rounded-3xl bg-white p-5 shadow">
-          <p className="text-sm text-slate-500">Lucro Potencial</p>
+          <p className="text-sm text-slate-500">
+            Lucro Potencial
+          </p>
+
           <h2 className="text-3xl font-black text-green-600">
             {moeda(
               produtos.reduce(
                 (t, p) =>
                   t +
-                  (Number(p.preco || 0) - Number(p.custo || 0)) *
+                  (Number(p.preco || 0) -
+                    Number(p.custo || 0)) *
                     Number(p.estoque || 0),
                 0
               )
@@ -441,20 +588,26 @@ export default function Produtos() {
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b p-4">
-          <h2 className="font-bold text-slate-700">Lista de produtos</h2>
+          <h2 className="font-bold text-slate-700">
+            Lista de produtos
+          </h2>
         </div>
 
         {carregando ? (
-          <p className="p-4">Carregando...</p>
+          <p className="p-4">
+            Carregando...
+          </p>
         ) : produtosFiltrados.length === 0 ? (
-          <p className="p-4 text-slate-500">Nenhum produto encontrado.</p>
+          <p className="p-4 text-slate-500">
+            Nenhum produto encontrado.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left">
                 <tr>
                   <th className="p-3">Nome</th>
-                  <th className="p-3">Código</th>
+                  <th className="p-3">Código de barras</th>
                   <th className="p-3">Custo</th>
                   <th className="p-3">Venda</th>
                   <th className="p-3">Lucro</th>
@@ -465,15 +618,36 @@ export default function Produtos() {
 
               <tbody>
                 {produtosFiltrados.map((p) => (
-                  <tr key={p.id} className="border-t">
-                    <td className="p-3">{p.nome}</td>
-                    <td className="p-3">{p.codigo || "-"}</td>
-                    <td className="p-3">{moeda(p.custo)}</td>
-                    <td className="p-3">{moeda(p.preco)}</td>
-                    <td className="p-3 font-bold text-green-600">
-                      {moeda(Number(p.preco || 0) - Number(p.custo || 0))}
+                  <tr
+                    key={p.id}
+                    className="border-t"
+                  >
+                    <td className="p-3">
+                      {p.nome}
                     </td>
-                    <td className="p-3">{p.estoque}</td>
+
+                    <td className="p-3 font-mono font-semibold text-[#0C7886]">
+                      {p.codigo || "-"}
+                    </td>
+
+                    <td className="p-3">
+                      {moeda(p.custo)}
+                    </td>
+
+                    <td className="p-3">
+                      {moeda(p.preco)}
+                    </td>
+
+                    <td className="p-3 font-bold text-green-600">
+                      {moeda(
+                        Number(p.preco || 0) -
+                          Number(p.custo || 0)
+                      )}
+                    </td>
+
+                    <td className="p-3">
+                      {p.estoque}
+                    </td>
 
                     <td className="p-3">
                       <div className="flex gap-2">
