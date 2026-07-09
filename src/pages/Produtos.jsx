@@ -98,7 +98,7 @@ export default function Produtos() {
     return produtos.filter((p) => {
       const combinaPesquisa =
         p.nome?.toLowerCase().includes(termo) ||
-        p.codigo?.toLowerCase().includes(termo);
+        String(p.codigo || "").toLowerCase().includes(termo);
 
       const estoque = Number(p.estoque || 0);
 
@@ -283,9 +283,7 @@ export default function Produtos() {
           );
 
           if (codigoDuplicadoPayload) {
-            alert(
-              `O código ${codigoProduto} está repetido no cadastro atual`
-            );
+            alert(`O código ${codigoProduto} está repetido no cadastro atual`);
             return;
           }
 
@@ -301,9 +299,7 @@ export default function Produtos() {
 
         console.log("PAYLOAD INSERT:", payload);
 
-        const { error } = await supabase
-          .from("produtos")
-          .insert(payload);
+        const { error } = await supabase.from("produtos").insert(payload);
 
         if (error) {
           console.error(error);
@@ -364,6 +360,180 @@ export default function Produtos() {
       style: "currency",
       currency: "BRL",
     });
+
+  function escaparHtml(valor) {
+    return String(valor ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function imprimirEtiqueta(produto) {
+    const codigo = String(produto.codigo || "").trim();
+
+    if (!codigo) {
+      alert("Este produto ainda não possui código de barras.");
+      return;
+    }
+
+    const nomeProduto = escaparHtml(produto.nome);
+    const codigoProduto = escaparHtml(codigo);
+    const precoProduto = escaparHtml(moeda(produto.preco));
+
+    const conteudo = `
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="UTF-8" />
+
+          <title>Etiqueta - ${nomeProduto}</title>
+
+          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+
+          <style>
+            @page {
+              size: 60mm 35mm;
+              margin: 0;
+            }
+
+            * {
+              box-sizing: border-box;
+            }
+
+            html,
+            body {
+              width: 60mm;
+              height: 35mm;
+              margin: 0;
+              padding: 0;
+              font-family: Arial, sans-serif;
+              color: #000;
+              background: #fff;
+            }
+
+            body {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            .etiqueta {
+              width: 60mm;
+              height: 35mm;
+              padding: 2mm 3mm;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              overflow: hidden;
+            }
+
+            .nome {
+              width: 100%;
+              font-size: 10px;
+              line-height: 12px;
+              font-weight: bold;
+              text-align: center;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+
+            .preco {
+              margin-top: 1mm;
+              font-size: 16px;
+              line-height: 18px;
+              font-weight: bold;
+              text-align: center;
+            }
+
+            .codigo-barras {
+              width: 100%;
+              margin-top: 1mm;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            #barcode {
+              max-width: 100%;
+            }
+
+            @media print {
+              html,
+              body {
+                width: 60mm;
+                height: 35mm;
+              }
+
+              .etiqueta {
+                border: none;
+              }
+            }
+          </style>
+        </head>
+
+        <body>
+          <div class="etiqueta">
+            <div class="nome">${nomeProduto}</div>
+
+            <div class="preco">${precoProduto}</div>
+
+            <div class="codigo-barras">
+              <svg id="barcode"></svg>
+            </div>
+          </div>
+
+          <script>
+            function gerarEtiqueta() {
+              try {
+                JsBarcode("#barcode", "${codigoProduto}", {
+                  format: "CODE128",
+                  displayValue: true,
+                  font: "Arial",
+                  fontSize: 10,
+                  textMargin: 1,
+                  height: 32,
+                  width: 1.5,
+                  margin: 0
+                });
+
+                setTimeout(function() {
+                  window.print();
+                }, 300);
+              } catch (error) {
+                alert("Erro ao gerar código de barras.");
+                console.error(error);
+              }
+            }
+
+            if (document.readyState === "complete") {
+              gerarEtiqueta();
+            } else {
+              window.addEventListener("load", gerarEtiqueta);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    const janela = window.open(
+      "",
+      "_blank",
+      "width=500,height=400"
+    );
+
+    if (!janela) {
+      alert("Não foi possível abrir a janela de impressão.");
+      return;
+    }
+
+    janela.document.open();
+    janela.document.write(conteudo);
+    janela.document.close();
+  }
 
   return (
     <div className="bg-white p-6">
@@ -527,7 +697,9 @@ export default function Produtos() {
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <div className="rounded-3xl bg-white p-5 shadow">
-          <p className="text-sm text-slate-500">Produtos</p>
+          <p className="text-sm text-slate-500">
+            Produtos
+          </p>
 
           <h2 className="text-3xl font-black">
             {produtos.length}
@@ -650,12 +822,19 @@ export default function Produtos() {
                     </td>
 
                     <td className="p-3">
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => atualizarProduto(p)}
                           className="rounded-lg bg-[#2AB7B0]/10 px-3 py-1 font-semibold text-[#0C7886] hover:bg-[#2AB7B0]/20"
                         >
                           Atualizar
+                        </button>
+
+                        <button
+                          onClick={() => imprimirEtiqueta(p)}
+                          className="rounded-lg bg-green-50 px-3 py-1 font-semibold text-green-700 hover:bg-green-100"
+                        >
+                          🏷️ Etiqueta
                         </button>
 
                         <button
