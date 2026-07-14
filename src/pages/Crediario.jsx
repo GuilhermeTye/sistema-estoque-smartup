@@ -1,38 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-/*
-|--------------------------------------------------------------------------
-| CONFIGURAÇÕES
-|--------------------------------------------------------------------------
-|
-| Campos esperados:
-|
-| clientes:
-| id, empresa_id, nome, cpf, telefone, endereco, cidade, estado
-|
-| produtos:
-| id, empresa_id, nome, codigo, preco, estoque
-|
-| crediarios:
-| id, empresa_id, cliente_id, numero_crediario, valor_total,
-| valor_entrada, valor_financiado, quantidade_parcelas,
-| data_primeiro_vencimento, status, observacao, criado_por,
-| criado_em, atualizado_em
-|
-| crediario_parcelas:
-| id, empresa_id, crediario_id, cliente_id, numero_parcela,
-| valor_parcela, valor_pago, valor_desconto, valor_juros,
-| valor_multa, data_vencimento, data_pagamento,
-| forma_pagamento, status, observacao
-|
-| crediario_pagamentos:
-| id, empresa_id, crediario_id, parcela_id, cliente_id,
-| valor, forma_pagamento, observacao, recebido_por,
-| recebido_em, estornado
-|
-*/
-
 const FORMAS_PAGAMENTO = [
   "Dinheiro",
   "PIX",
@@ -71,52 +39,45 @@ function dataBrasil(data) {
   if (!data) return "-";
 
   const somenteData = String(data).slice(0, 10);
-  const [ano, mes, dia] = somenteData.split("-");
+  const partes = somenteData.split("-");
 
-  if (!ano || !mes || !dia) return "-";
+  if (partes.length !== 3) return "-";
 
-  return `${dia}/${mes}/${ano}`;
-}
-
-function dataHoraBrasil(data) {
-  if (!data) return "-";
-
-  return new Date(data).toLocaleString("pt-BR");
+  return `${partes[2]}/${partes[1]}/${partes[0]}`;
 }
 
 function hojeISO() {
-  const agora = new Date();
-  const ano = agora.getFullYear();
-  const mes = String(agora.getMonth() + 1).padStart(2, "0");
-  const dia = String(agora.getDate()).padStart(2, "0");
+  const hoje = new Date();
+
+  const ano = hoje.getFullYear();
+  const mes = String(hoje.getMonth() + 1).padStart(2, "0");
+  const dia = String(hoje.getDate()).padStart(2, "0");
 
   return `${ano}-${mes}-${dia}`;
 }
 
-function adicionarMeses(dataISO, quantidadeMeses) {
+function adicionarMeses(dataISO, quantidade) {
   if (!dataISO) return "";
 
   const [ano, mes, dia] = dataISO.split("-").map(Number);
 
-  const data = new Date(ano, mes - 1, dia);
-  const diaOriginal = data.getDate();
+  const data = new Date(ano, mes - 1, 1);
 
-  data.setDate(1);
-  data.setMonth(data.getMonth() + quantidadeMeses);
+  data.setMonth(data.getMonth() + Number(quantidade || 0));
 
-  const ultimoDiaMes = new Date(
+  const ultimoDia = new Date(
     data.getFullYear(),
     data.getMonth() + 1,
-    0,
+    0
   ).getDate();
 
-  data.setDate(Math.min(diaOriginal, ultimoDiaMes));
+  data.setDate(Math.min(dia, ultimoDia));
 
-  const anoResultado = data.getFullYear();
-  const mesResultado = String(data.getMonth() + 1).padStart(2, "0");
-  const diaResultado = String(data.getDate()).padStart(2, "0");
-
-  return `${anoResultado}-${mesResultado}-${diaResultado}`;
+  return [
+    data.getFullYear(),
+    String(data.getMonth() + 1).padStart(2, "0"),
+    String(data.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function somenteNumeros(valor) {
@@ -124,7 +85,9 @@ function somenteNumeros(valor) {
 }
 
 function normalizarValor(valor) {
-  if (valor === null || valor === undefined || valor === "") return 0;
+  if (valor === null || valor === undefined || valor === "") {
+    return 0;
+  }
 
   if (typeof valor === "number") {
     return Number.isFinite(valor) ? valor : 0;
@@ -135,12 +98,14 @@ function normalizarValor(valor) {
   if (!texto) return 0;
 
   if (texto.includes(",")) {
-    return Number(
-      texto
-        .replace(/\./g, "")
-        .replace(",", ".")
-        .replace(/[^\d.-]/g, ""),
-    ) || 0;
+    return (
+      Number(
+        texto
+          .replace(/\./g, "")
+          .replace(",", ".")
+          .replace(/[^\d.-]/g, "")
+      ) || 0
+    );
   }
 
   return Number(texto.replace(/[^\d.-]/g, "")) || 0;
@@ -165,16 +130,13 @@ function obterEmpresaId() {
 }
 
 function calcularSaldoParcela(parcela) {
-  const valorParcela = Number(parcela?.valor_parcela || 0);
+  const valor = Number(parcela?.valor_parcela || 0);
   const juros = Number(parcela?.valor_juros || 0);
   const multa = Number(parcela?.valor_multa || 0);
   const desconto = Number(parcela?.valor_desconto || 0);
   const pago = Number(parcela?.valor_pago || 0);
 
-  return Math.max(
-    0,
-    valorParcela + juros + multa - desconto - pago,
-  );
+  return Math.max(0, valor + juros + multa - desconto - pago);
 }
 
 function classeStatus(status) {
@@ -196,6 +158,15 @@ function classeStatus(status) {
   return classes[status] || "bg-slate-100 text-slate-600";
 }
 
+function obterNomeCliente(cliente) {
+  return (
+    cliente?.nome ||
+    cliente?.nome_completo ||
+    cliente?.cliente_nome ||
+    "Cliente sem nome"
+  );
+}
+
 function StatCard({ titulo, valor, descricao }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -210,11 +181,17 @@ function StatCard({ titulo, valor, descricao }) {
   );
 }
 
-function Modal({ aberto, titulo, fechar, children, largura = "max-w-5xl" }) {
+function Modal({
+  aberto,
+  titulo,
+  fechar,
+  children,
+  largura = "max-w-5xl",
+}) {
   if (!aberto) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4">
       <div
         className={`max-h-[94vh] w-full ${largura} overflow-hidden rounded-3xl bg-white shadow-2xl`}
       >
@@ -247,9 +224,9 @@ export default function Crediario() {
   const [salvando, setSalvando] = useState(false);
   const [recebendo, setRecebendo] = useState(false);
 
-  const [crediarios, setCrediarios] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [produtos, setProdutos] = useState([]);
+  const [crediarios, setCrediarios] = useState([]);
 
   const [pesquisa, setPesquisa] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("TODOS");
@@ -258,14 +235,16 @@ export default function Crediario() {
   const [modalDetalhes, setModalDetalhes] = useState(false);
   const [modalRecebimento, setModalRecebimento] = useState(false);
 
-  const [crediarioSelecionado, setCrediarioSelecionado] = useState(null);
-  const [parcelasSelecionadas, setParcelasSelecionadas] = useState([]);
+  const [clienteSelecionado, setClienteSelecionado] = useState(null);
+  const [crediarioSelecionado, setCrediarioSelecionado] =
+    useState(null);
+
   const [parcelaRecebimento, setParcelaRecebimento] = useState(null);
+  const [parcelasSelecionadas, setParcelasSelecionadas] = useState([]);
 
   const [pesquisaCliente, setPesquisaCliente] = useState("");
   const [pesquisaProduto, setPesquisaProduto] = useState("");
 
-  const [clienteSelecionado, setClienteSelecionado] = useState(null);
   const [itens, setItens] = useState([]);
 
   const [parcelamento, setParcelamento] = useState({
@@ -286,12 +265,18 @@ export default function Crediario() {
 
   const totalVenda = useMemo(() => {
     return itens.reduce((total, item) => {
-      return total + Number(item.preco || 0) * Number(item.quantidade || 0);
+      return (
+        total +
+        Number(item.preco || 0) * Number(item.quantidade || 0)
+      );
     }, 0);
   }, [itens]);
 
   const valorEntrada = useMemo(() => {
-    return Math.max(0, normalizarValor(parcelamento.valorEntrada));
+    return Math.max(
+      0,
+      normalizarValor(parcelamento.valorEntrada)
+    );
   }, [parcelamento.valorEntrada]);
 
   const valorFinanciado = useMemo(() => {
@@ -301,24 +286,23 @@ export default function Crediario() {
   const parcelasPrevias = useMemo(() => {
     const quantidade = Math.max(
       1,
-      Number(parcelamento.quantidadeParcelas || 1),
+      Number(parcelamento.quantidadeParcelas || 1)
     );
 
     const totalCentavos = Math.round(valorFinanciado * 100);
-    const valorBaseCentavos = Math.floor(totalCentavos / quantidade);
-    const diferencaCentavos =
-      totalCentavos - valorBaseCentavos * quantidade;
+    const valorBase = Math.floor(totalCentavos / quantidade);
+    const diferenca = totalCentavos - valorBase * quantidade;
 
     return Array.from({ length: quantidade }, (_, indice) => {
-      const adicional = indice < diferencaCentavos ? 1 : 0;
-      const valor = (valorBaseCentavos + adicional) / 100;
+      const valorCentavos =
+        valorBase + (indice < diferenca ? 1 : 0);
 
       return {
         numero_parcela: indice + 1,
-        valor_parcela: valor,
+        valor_parcela: valorCentavos / 100,
         data_vencimento: adicionarMeses(
           parcelamento.primeiroVencimento,
-          indice,
+          indice
         ),
       };
     });
@@ -330,19 +314,20 @@ export default function Crediario() {
 
   const clientesFiltrados = useMemo(() => {
     const termo = pesquisaCliente.trim().toLowerCase();
-
-    if (!termo) return clientes.slice(0, 20);
+    const numeros = somenteNumeros(termo);
 
     return clientes
       .filter((cliente) => {
-        const nome = String(cliente.nome || "").toLowerCase();
-        const cpf = somenteNumeros(cliente.cpf);
-        const telefone = somenteNumeros(cliente.telefone);
+        if (!termo) return true;
+
+        const nome = obterNomeCliente(cliente).toLowerCase();
+        const cpf = somenteNumeros(cliente?.cpf);
+        const telefone = somenteNumeros(cliente?.telefone);
 
         return (
           nome.includes(termo) ||
-          cpf.includes(somenteNumeros(termo)) ||
-          telefone.includes(somenteNumeros(termo))
+          (numeros && cpf.includes(numeros)) ||
+          (numeros && telefone.includes(numeros))
         );
       })
       .slice(0, 30);
@@ -352,39 +337,37 @@ export default function Crediario() {
     const termo = pesquisaProduto.trim().toLowerCase();
 
     return produtos
-      .filter((produto) => Number(produto.estoque || 0) > 0)
+      .filter((produto) => Number(produto?.estoque || 0) > 0)
       .filter((produto) => {
         if (!termo) return true;
 
-        return (
-          String(produto.nome || "")
-            .toLowerCase()
-            .includes(termo) ||
-          String(produto.codigo || "")
-            .toLowerCase()
-            .includes(termo)
-        );
+        const nome = String(produto?.nome || "").toLowerCase();
+        const codigo = String(produto?.codigo || "").toLowerCase();
+
+        return nome.includes(termo) || codigo.includes(termo);
       })
       .slice(0, 30);
   }, [produtos, pesquisaProduto]);
 
   const crediariosFiltrados = useMemo(() => {
     const termo = pesquisa.trim().toLowerCase();
-    const numerosPesquisa = somenteNumeros(termo);
+    const numeros = somenteNumeros(termo);
 
     return crediarios.filter((crediario) => {
-      const cliente = crediario.cliente || {};
+      const cliente = crediario?.cliente || {};
+
       const correspondeStatus =
         filtroStatus === "TODOS" ||
         crediario.status === filtroStatus;
 
       const correspondePesquisa =
         !termo ||
-        String(cliente.nome || "")
+        obterNomeCliente(cliente).toLowerCase().includes(termo) ||
+        (numeros &&
+          somenteNumeros(cliente?.cpf).includes(numeros)) ||
+        String(crediario?.numero_crediario || "")
           .toLowerCase()
-          .includes(termo) ||
-        somenteNumeros(cliente.cpf).includes(numerosPesquisa) ||
-        String(crediario.numero_crediario || "").includes(termo);
+          .includes(termo);
 
       return correspondeStatus && correspondePesquisa;
     });
@@ -394,10 +377,11 @@ export default function Crediario() {
     let totalReceber = 0;
     let totalVencido = 0;
     let totalRecebido = 0;
-    const clientesAtrasados = new Set();
+
+    const inadimplentes = new Set();
 
     crediarios.forEach((crediario) => {
-      const parcelas = crediario.parcelas || [];
+      const parcelas = crediario?.parcelas || [];
 
       parcelas.forEach((parcela) => {
         const saldo = calcularSaldoParcela(parcela);
@@ -408,7 +392,7 @@ export default function Crediario() {
 
         if (parcela.status === "ATRASADA") {
           totalVencido += saldo;
-          clientesAtrasados.add(crediario.cliente_id);
+          inadimplentes.add(crediario.cliente_id);
         }
 
         totalRecebido += Number(parcela.valor_pago || 0);
@@ -419,7 +403,7 @@ export default function Crediario() {
       totalReceber,
       totalVencido,
       totalRecebido,
-      inadimplentes: clientesAtrasados.size,
+      inadimplentes: inadimplentes.size,
     };
   }, [crediarios]);
 
@@ -428,15 +412,16 @@ export default function Crediario() {
 
     const { data, error } = await supabase
       .from("clientes")
-      .select(
-        "id, empresa_id, nome, cpf, telefone, endereco, cidade, estado",
-      )
+      .select("*")
       .eq("empresa_id", empresaId)
       .order("nome", { ascending: true });
 
     if (error) {
       console.error("Erro ao carregar clientes:", error);
-      throw new Error("Não foi possível carregar os clientes.");
+
+      throw new Error(
+        `Não foi possível carregar os clientes: ${error.message}`
+      );
     }
 
     setClientes(data || []);
@@ -447,13 +432,16 @@ export default function Crediario() {
 
     const { data, error } = await supabase
       .from("produtos")
-      .select("id, empresa_id, nome, codigo, preco, estoque")
+      .select("*")
       .eq("empresa_id", empresaId)
       .order("nome", { ascending: true });
 
     if (error) {
       console.error("Erro ao carregar produtos:", error);
-      throw new Error("Não foi possível carregar os produtos.");
+
+      throw new Error(
+        `Não foi possível carregar os produtos: ${error.message}`
+      );
     }
 
     setProdutos(data || []);
@@ -462,48 +450,116 @@ export default function Crediario() {
   const carregarCrediarios = useCallback(async () => {
     if (!empresaId) return;
 
-    const { data, error } = await supabase
-      .from("crediarios")
-      .select(`
-        *,
-        cliente:clientes (
-          id,
-          nome,
-          cpf,
-          telefone,
-          endereco,
-          cidade,
-          estado
-        ),
-        parcelas:crediario_parcelas (
-          id,
-          crediario_id,
-          cliente_id,
-          numero_parcela,
-          valor_parcela,
-          valor_pago,
-          valor_desconto,
-          valor_juros,
-          valor_multa,
-          data_vencimento,
-          data_pagamento,
-          forma_pagamento,
-          status,
-          observacao
-        )
-      `)
-      .eq("empresa_id", empresaId)
-      .order("criado_em", { ascending: false });
+    const { data: dadosCrediarios, error: erroCrediarios } =
+      await supabase
+        .from("crediarios")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .order("criado_em", { ascending: false });
 
-    if (error) {
-      console.error("Erro ao carregar crediários:", error);
-      throw new Error("Não foi possível carregar os crediários.");
+    if (erroCrediarios) {
+      console.error(
+        "Erro ao consultar a tabela crediarios:",
+        erroCrediarios
+      );
+
+      throw new Error(
+        `Não foi possível carregar os crediários: ${erroCrediarios.message}`
+      );
     }
 
-    const registros = (data || []).map((crediario) => ({
+    if (!dadosCrediarios || dadosCrediarios.length === 0) {
+      setCrediarios([]);
+      return;
+    }
+
+    const clientesIds = [
+      ...new Set(
+        dadosCrediarios
+          .map((crediario) => crediario.cliente_id)
+          .filter(Boolean)
+      ),
+    ];
+
+    let dadosClientes = [];
+
+    if (clientesIds.length > 0) {
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .in("id", clientesIds);
+
+      if (error) {
+        console.error(
+          "Erro ao carregar clientes relacionados:",
+          error
+        );
+
+        throw new Error(
+          `Não foi possível carregar os clientes dos crediários: ${error.message}`
+        );
+      }
+
+      dadosClientes = data || [];
+    }
+
+    const crediariosIds = dadosCrediarios.map(
+      (crediario) => crediario.id
+    );
+
+    let dadosParcelas = [];
+
+    if (crediariosIds.length > 0) {
+      const { data, error } = await supabase
+        .from("crediario_parcelas")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .in("crediario_id", crediariosIds)
+        .order("numero_parcela", { ascending: true });
+
+      if (error) {
+        console.error("Erro ao carregar parcelas:", error);
+
+        throw new Error(
+          `Não foi possível carregar as parcelas: ${error.message}`
+        );
+      }
+
+      dadosParcelas = data || [];
+    }
+
+    const clientesPorId = {};
+
+    dadosClientes.forEach((cliente) => {
+      clientesPorId[cliente.id] = cliente;
+    });
+
+    const parcelasPorCrediario = {};
+
+    dadosParcelas.forEach((parcela) => {
+      if (!parcelasPorCrediario[parcela.crediario_id]) {
+        parcelasPorCrediario[parcela.crediario_id] = [];
+      }
+
+      parcelasPorCrediario[parcela.crediario_id].push(parcela);
+    });
+
+    const registros = dadosCrediarios.map((crediario) => ({
       ...crediario,
-      parcelas: [...(crediario.parcelas || [])].sort(
-        (a, b) => a.numero_parcela - b.numero_parcela,
+
+      cliente: clientesPorId[crediario.cliente_id] || {
+        id: crediario.cliente_id,
+        nome: "Cliente não encontrado",
+        cpf: "",
+        telefone: "",
+      },
+
+      parcelas: (
+        parcelasPorCrediario[crediario.id] || []
+      ).sort(
+        (a, b) =>
+          Number(a.numero_parcela) - Number(b.numero_parcela)
       ),
     }));
 
@@ -513,59 +569,20 @@ export default function Crediario() {
   const atualizarParcelasAtrasadas = useCallback(async () => {
     if (!empresaId) return;
 
-    const hoje = hojeISO();
-
     const { error } = await supabase
       .from("crediario_parcelas")
       .update({
         status: "ATRASADA",
       })
       .eq("empresa_id", empresaId)
-      .lt("data_vencimento", hoje)
+      .lt("data_vencimento", hojeISO())
       .in("status", ["PENDENTE", "PARCIAL"]);
 
     if (error) {
-      console.warn("Não foi possível atualizar parcelas atrasadas:", error);
-    }
-
-    const { data: crediariosAbertos, error: erroCrediarios } =
-      await supabase
-        .from("crediarios")
-        .select("id")
-        .eq("empresa_id", empresaId)
-        .in("status", ["ABERTO", "PARCIALMENTE_PAGO"]);
-
-    if (erroCrediarios) {
       console.warn(
-        "Não foi possível consultar crediários abertos:",
-        erroCrediarios,
+        "Não foi possível atualizar parcelas atrasadas:",
+        error
       );
-      return;
-    }
-
-    const ids = (crediariosAbertos || []).map((item) => item.id);
-
-    if (ids.length === 0) return;
-
-    const { data: parcelasAtrasadas } = await supabase
-      .from("crediario_parcelas")
-      .select("crediario_id")
-      .eq("empresa_id", empresaId)
-      .in("crediario_id", ids)
-      .eq("status", "ATRASADA");
-
-    const idsAtrasados = [
-      ...new Set(
-        (parcelasAtrasadas || []).map((item) => item.crediario_id),
-      ),
-    ];
-
-    if (idsAtrasados.length > 0) {
-      await supabase
-        .from("crediarios")
-        .update({ status: "ATRASADO" })
-        .eq("empresa_id", empresaId)
-        .in("id", idsAtrasados);
     }
   }, [empresaId]);
 
@@ -586,8 +603,12 @@ export default function Crediario() {
         carregarCrediarios(),
       ]);
     } catch (error) {
-      console.error(error);
-      alert(error.message || "Erro ao carregar o módulo de crediário.");
+      console.error("Erro ao carregar crediário:", error);
+
+      alert(
+        error?.message ||
+          "Não foi possível carregar o módulo de crediário."
+      );
     } finally {
       setLoading(false);
     }
@@ -624,19 +645,20 @@ export default function Crediario() {
 
   function fecharNovaVenda() {
     if (salvando) return;
+
     setModalNovaVenda(false);
     limparNovaVenda();
   }
 
   function adicionarProduto(produto) {
-    const itemExistente = itens.find(
-      (item) => item.produto_id === produto.id,
+    const existente = itens.find(
+      (item) => item.produto_id === produto.id
     );
 
-    if (itemExistente) {
+    if (existente) {
       alterarQuantidade(
         produto.id,
-        Number(itemExistente.quantidade) + 1,
+        Number(existente.quantidade) + 1
       );
 
       return;
@@ -655,16 +677,21 @@ export default function Crediario() {
     ]);
   }
 
-  function alterarQuantidade(produtoId, novaQuantidade) {
-    const quantidade = Math.max(1, Number(novaQuantidade || 1));
+  function alterarQuantidade(produtoId, quantidadeInformada) {
+    const quantidade = Math.max(
+      1,
+      Number(quantidadeInformada || 1)
+    );
 
     setItens((anteriores) =>
       anteriores.map((item) => {
-        if (item.produto_id !== produtoId) return item;
+        if (item.produto_id !== produtoId) {
+          return item;
+        }
 
         if (quantidade > Number(item.estoque || 0)) {
           alert(
-            `O estoque disponível de ${item.nome} é ${item.estoque}.`,
+            `O estoque disponível de ${item.nome} é ${item.estoque}.`
           );
 
           return item;
@@ -674,12 +701,12 @@ export default function Crediario() {
           ...item,
           quantidade,
         };
-      }),
+      })
     );
   }
 
-  function alterarPreco(produtoId, novoPreco) {
-    const preco = Math.max(0, normalizarValor(novoPreco));
+  function alterarPreco(produtoId, valor) {
+    const preco = Math.max(0, normalizarValor(valor));
 
     setItens((anteriores) =>
       anteriores.map((item) =>
@@ -688,14 +715,16 @@ export default function Crediario() {
               ...item,
               preco,
             }
-          : item,
-      ),
+          : item
+      )
     );
   }
 
   function removerProduto(produtoId) {
     setItens((anteriores) =>
-      anteriores.filter((item) => item.produto_id !== produtoId),
+      anteriores.filter(
+        (item) => item.produto_id !== produtoId
+      )
     );
   }
 
@@ -710,13 +739,16 @@ export default function Crediario() {
 
       if (error || !data) {
         throw new Error(
-          `Não foi possível verificar o estoque de ${item.nome}.`,
+          `Não foi possível verificar o estoque de ${item.nome}.`
         );
       }
 
-      if (Number(data.estoque || 0) < Number(item.quantidade || 0)) {
+      if (
+        Number(data.estoque || 0) <
+        Number(item.quantidade || 0)
+      ) {
         throw new Error(
-          `Estoque insuficiente para ${data.nome}. Disponível: ${data.estoque}.`,
+          `Estoque insuficiente para ${data.nome}. Estoque disponível: ${data.estoque}.`
         );
       }
     }
@@ -724,35 +756,40 @@ export default function Crediario() {
 
   async function baixarEstoques() {
     for (const item of itens) {
-      const { data: produtoAtual, error: erroConsulta } = await supabase
+      const { data, error } = await supabase
         .from("produtos")
         .select("estoque")
         .eq("empresa_id", empresaId)
         .eq("id", item.produto_id)
         .single();
 
-      if (erroConsulta) {
+      if (error || !data) {
         throw new Error(
-          `Erro ao consultar o estoque de ${item.nome}.`,
+          `Não foi possível consultar o estoque de ${item.nome}.`
         );
       }
 
-      const estoqueAtual = Number(produtoAtual.estoque || 0);
-      const novoEstoque = estoqueAtual - Number(item.quantidade || 0);
+      const novoEstoque =
+        Number(data.estoque || 0) -
+        Number(item.quantidade || 0);
 
       if (novoEstoque < 0) {
-        throw new Error(`Estoque insuficiente para ${item.nome}.`);
+        throw new Error(
+          `Estoque insuficiente para ${item.nome}.`
+        );
       }
 
       const { error: erroAtualizacao } = await supabase
         .from("produtos")
-        .update({ estoque: novoEstoque })
+        .update({
+          estoque: novoEstoque,
+        })
         .eq("empresa_id", empresaId)
         .eq("id", item.produto_id);
 
       if (erroAtualizacao) {
         throw new Error(
-          `Não foi possível baixar o estoque de ${item.nome}.`,
+          `Não foi possível baixar o estoque de ${item.nome}.`
         );
       }
     }
@@ -780,14 +817,17 @@ export default function Crediario() {
           .eq("empresa_id", empresaId)
           .eq("id", item.produto_id);
       } catch (error) {
-        console.error("Erro ao devolver estoque:", error);
+        console.error(
+          "Erro ao devolver estoque:",
+          error
+        );
       }
     }
   }
 
   async function finalizarVendaCrediario() {
     if (!empresaId) {
-      alert("Empresa não identificada. Faça login novamente.");
+      alert("Empresa não identificada.");
       return;
     }
 
@@ -807,23 +847,30 @@ export default function Crediario() {
     }
 
     if (valorEntrada > totalVenda) {
-      alert("O valor da entrada não pode ser maior que a venda.");
+      alert(
+        "O valor da entrada não pode ser maior que o total da venda."
+      );
       return;
     }
 
     if (valorFinanciado <= 0) {
       alert(
-        "O valor financiado precisa ser maior que zero. Para pagamento integral, utilize o módulo de vendas.",
+        "O valor financiado precisa ser maior que zero."
       );
       return;
     }
 
     const quantidadeParcelas = Number(
-      parcelamento.quantidadeParcelas || 0,
+      parcelamento.quantidadeParcelas || 0
     );
 
-    if (quantidadeParcelas < 1 || quantidadeParcelas > 120) {
-      alert("Informe uma quantidade de parcelas entre 1 e 120.");
+    if (
+      quantidadeParcelas < 1 ||
+      quantidadeParcelas > 120
+    ) {
+      alert(
+        "Informe uma quantidade de parcelas entre 1 e 120."
+      );
       return;
     }
 
@@ -840,94 +887,99 @@ export default function Crediario() {
 
       const {
         data: { user },
-        error: erroUsuario,
       } = await supabase.auth.getUser();
-
-      if (erroUsuario) {
-        throw new Error("Não foi possível identificar o usuário.");
-      }
 
       await validarEstoques();
 
-      const payloadCrediario = {
-        empresa_id: empresaId,
-        cliente_id: clienteSelecionado.id,
-        valor_total: Number(totalVenda.toFixed(2)),
-        valor_entrada: Number(valorEntrada.toFixed(2)),
-        valor_financiado: Number(valorFinanciado.toFixed(2)),
-        quantidade_parcelas: quantidadeParcelas,
-        data_primeiro_vencimento:
-          parcelamento.primeiroVencimento,
-        status: "ABERTO",
-        observacao: JSON.stringify({
-          observacao: parcelamento.observacao || "",
-          itens: itens.map((item) => ({
-            produto_id: item.produto_id,
-            nome: item.nome,
-            codigo: item.codigo,
-            quantidade: Number(item.quantidade),
-            preco_unitario: Number(item.preco),
-            subtotal:
-              Number(item.quantidade) * Number(item.preco),
-          })),
-        }),
-        criado_por: user?.id || null,
-      };
+      const observacaoCompleta = JSON.stringify({
+        observacao: parcelamento.observacao || "",
+        itens: itens.map((item) => ({
+          produto_id: item.produto_id,
+          nome: item.nome,
+          codigo: item.codigo,
+          quantidade: Number(item.quantidade),
+          preco_unitario: Number(item.preco),
+          subtotal:
+            Number(item.preco) *
+            Number(item.quantidade),
+        })),
+      });
 
-      const { data: novoCrediario, error: erroCrediario } =
-        await supabase
-          .from("crediarios")
-          .insert(payloadCrediario)
-          .select()
-          .single();
+      const { data, error } = await supabase
+        .from("crediarios")
+        .insert({
+          empresa_id: empresaId,
+          cliente_id: clienteSelecionado.id,
+          valor_total: Number(totalVenda.toFixed(2)),
+          valor_entrada: Number(valorEntrada.toFixed(2)),
+          valor_financiado: Number(
+            valorFinanciado.toFixed(2)
+          ),
+          quantidade_parcelas: quantidadeParcelas,
+          data_primeiro_vencimento:
+            parcelamento.primeiroVencimento,
+          status: "ABERTO",
+          observacao: observacaoCompleta,
+          criado_por: user?.id || null,
+        })
+        .select("*")
+        .single();
 
-      if (erroCrediario) {
-        console.error(erroCrediario);
+      if (error) {
         throw new Error(
-          `Erro ao criar o crediário: ${erroCrediario.message}`,
+          `Erro ao criar crediário: ${error.message}`
         );
       }
 
-      crediarioCriado = novoCrediario;
+      crediarioCriado = data;
 
-      const payloadParcelas = parcelasPrevias.map((parcela) => ({
-        empresa_id: empresaId,
-        crediario_id: novoCrediario.id,
-        cliente_id: clienteSelecionado.id,
-        numero_parcela: parcela.numero_parcela,
-        valor_parcela: Number(parcela.valor_parcela.toFixed(2)),
-        valor_pago: 0,
-        valor_desconto: 0,
-        valor_juros: 0,
-        valor_multa: 0,
-        data_vencimento: parcela.data_vencimento,
-        status: "PENDENTE",
-      }));
+      const parcelasPayload = parcelasPrevias.map(
+        (parcela) => ({
+          empresa_id: empresaId,
+          crediario_id: data.id,
+          cliente_id: clienteSelecionado.id,
+          numero_parcela: parcela.numero_parcela,
+          valor_parcela: Number(
+            parcela.valor_parcela.toFixed(2)
+          ),
+          valor_pago: 0,
+          valor_desconto: 0,
+          valor_juros: 0,
+          valor_multa: 0,
+          data_vencimento: parcela.data_vencimento,
+          status: "PENDENTE",
+        })
+      );
 
       const { error: erroParcelas } = await supabase
         .from("crediario_parcelas")
-        .insert(payloadParcelas);
+        .insert(parcelasPayload);
 
       if (erroParcelas) {
         throw new Error(
-          `Erro ao gerar as parcelas: ${erroParcelas.message}`,
+          `Erro ao gerar parcelas: ${erroParcelas.message}`
         );
       }
 
       await baixarEstoques();
       estoqueBaixado = true;
 
-      alert("Venda no crediário cadastrada com sucesso.");
+      alert(
+        "Venda no crediário cadastrada com sucesso."
+      );
 
       setModalNovaVenda(false);
       limparNovaVenda();
 
       await Promise.all([
-        carregarCrediarios(),
         carregarProdutos(),
+        carregarCrediarios(),
       ]);
     } catch (error) {
-      console.error("Erro ao finalizar venda:", error);
+      console.error(
+        "Erro ao finalizar crediário:",
+        error
+      );
 
       if (estoqueBaixado) {
         await devolverEstoques();
@@ -941,7 +993,10 @@ export default function Crediario() {
           .eq("id", crediarioCriado.id);
       }
 
-      alert(error.message || "Não foi possível concluir a venda.");
+      alert(
+        error?.message ||
+          "Não foi possível cadastrar o crediário."
+      );
     } finally {
       setSalvando(false);
     }
@@ -949,19 +1004,22 @@ export default function Crediario() {
 
   async function abrirDetalhes(crediario) {
     try {
-      setCrediarioSelecionado(crediario);
-
       const { data, error } = await supabase
         .from("crediario_parcelas")
         .select("*")
         .eq("empresa_id", empresaId)
         .eq("crediario_id", crediario.id)
-        .order("numero_parcela", { ascending: true });
+        .order("numero_parcela", {
+          ascending: true,
+        });
 
       if (error) {
-        throw new Error("Não foi possível carregar as parcelas.");
+        throw new Error(
+          `Não foi possível carregar as parcelas: ${error.message}`
+        );
       }
 
+      setCrediarioSelecionado(crediario);
       setParcelasSelecionadas(data || []);
       setModalDetalhes(true);
     } catch (error) {
@@ -971,12 +1029,10 @@ export default function Crediario() {
   }
 
   function abrirRecebimento(parcela) {
-    const saldo = calcularSaldoParcela(parcela);
-
     setParcelaRecebimento(parcela);
 
     setRecebimento({
-      valor: saldo.toFixed(2),
+      valor: calcularSaldoParcela(parcela).toFixed(2),
       formaPagamento: "Dinheiro",
       desconto: String(parcela.valor_desconto || ""),
       juros: String(parcela.valor_juros || ""),
@@ -988,78 +1044,93 @@ export default function Crediario() {
   }
 
   async function atualizarStatusCrediario(crediarioId) {
-    const { data: parcelas, error } = await supabase
+    const { data, error } = await supabase
       .from("crediario_parcelas")
-      .select("status, valor_parcela, valor_pago")
+      .select("status, valor_pago")
       .eq("empresa_id", empresaId)
       .eq("crediario_id", crediarioId);
 
-    if (error) {
-      console.error("Erro ao consultar parcelas:", error);
-      return;
-    }
+    if (error || !data) return;
 
     const todasPagas =
-      parcelas.length > 0 &&
-      parcelas.every((parcela) => parcela.status === "PAGA");
+      data.length > 0 &&
+      data.every((parcela) => parcela.status === "PAGA");
 
-    const algumaAtrasada = parcelas.some(
-      (parcela) => parcela.status === "ATRASADA",
+    const existeAtrasada = data.some(
+      (parcela) => parcela.status === "ATRASADA"
     );
 
-    const algumPagamento = parcelas.some(
-      (parcela) => Number(parcela.valor_pago || 0) > 0,
+    const existePagamento = data.some(
+      (parcela) =>
+        Number(parcela.valor_pago || 0) > 0
     );
 
     let novoStatus = "ABERTO";
 
     if (todasPagas) {
       novoStatus = "QUITADO";
-    } else if (algumaAtrasada) {
+    } else if (existeAtrasada) {
       novoStatus = "ATRASADO";
-    } else if (algumPagamento) {
+    } else if (existePagamento) {
       novoStatus = "PARCIALMENTE_PAGO";
     }
 
     await supabase
       .from("crediarios")
-      .update({ status: novoStatus })
+      .update({
+        status: novoStatus,
+      })
       .eq("empresa_id", empresaId)
       .eq("id", crediarioId);
   }
 
   async function confirmarRecebimento() {
-    if (!parcelaRecebimento || !crediarioSelecionado) return;
+    if (
+      !parcelaRecebimento ||
+      !crediarioSelecionado
+    ) {
+      return;
+    }
 
-    const valorPagamento = normalizarValor(recebimento.valor);
-    const desconto = normalizarValor(recebimento.desconto);
+    const valorRecebido = normalizarValor(
+      recebimento.valor
+    );
+
+    const desconto = normalizarValor(
+      recebimento.desconto
+    );
+
     const juros = normalizarValor(recebimento.juros);
     const multa = normalizarValor(recebimento.multa);
 
     const valorParcela = Number(
-      parcelaRecebimento.valor_parcela || 0,
+      parcelaRecebimento.valor_parcela || 0
     );
 
-    const valorJaPago = Number(parcelaRecebimento.valor_pago || 0);
+    const valorJaPago = Number(
+      parcelaRecebimento.valor_pago || 0
+    );
 
     const totalAtualizado =
       valorParcela + juros + multa - desconto;
 
     const saldoAtualizado = Math.max(
       0,
-      totalAtualizado - valorJaPago,
+      totalAtualizado - valorJaPago
     );
 
-    if (valorPagamento <= 0) {
-      alert("Informe um valor de pagamento maior que zero.");
+    if (valorRecebido <= 0) {
+      alert(
+        "Informe um valor de pagamento maior que zero."
+      );
       return;
     }
 
-    if (valorPagamento > saldoAtualizado + 0.01) {
+    if (valorRecebido > saldoAtualizado + 0.01) {
       alert(
-        `O pagamento não pode ser maior que o saldo de ${moeda(
-          saldoAtualizado,
-        )}.`,
+        `O pagamento não pode ser maior que ${moeda(
+          saldoAtualizado
+        )}.`
       );
       return;
     }
@@ -1072,12 +1143,11 @@ export default function Crediario() {
       } = await supabase.auth.getUser();
 
       const novoValorPago = Number(
-        (valorJaPago + valorPagamento).toFixed(2),
+        (valorJaPago + valorRecebido).toFixed(2)
       );
 
-      const quitada = novoValorPago >= totalAtualizado - 0.01;
-
-      const novoStatus = quitada ? "PAGA" : "PARCIAL";
+      const parcelaQuitada =
+        novoValorPago >= totalAtualizado - 0.01;
 
       const { error: erroPagamento } = await supabase
         .from("crediario_pagamentos")
@@ -1086,9 +1156,11 @@ export default function Crediario() {
           crediario_id: crediarioSelecionado.id,
           parcela_id: parcelaRecebimento.id,
           cliente_id: crediarioSelecionado.cliente_id,
-          valor: Number(valorPagamento.toFixed(2)),
-          forma_pagamento: recebimento.formaPagamento,
-          observacao: recebimento.observacao || null,
+          valor: Number(valorRecebido.toFixed(2)),
+          forma_pagamento:
+            recebimento.formaPagamento,
+          observacao:
+            recebimento.observacao || null,
           recebido_por: user?.id || null,
           recebido_em: new Date().toISOString(),
           estornado: false,
@@ -1096,7 +1168,7 @@ export default function Crediario() {
 
       if (erroPagamento) {
         throw new Error(
-          `Erro ao registrar pagamento: ${erroPagamento.message}`,
+          `Erro ao registrar pagamento: ${erroPagamento.message}`
         );
       }
 
@@ -1104,35 +1176,52 @@ export default function Crediario() {
         .from("crediario_parcelas")
         .update({
           valor_pago: novoValorPago,
-          valor_desconto: Number(desconto.toFixed(2)),
+          valor_desconto: Number(
+            desconto.toFixed(2)
+          ),
           valor_juros: Number(juros.toFixed(2)),
           valor_multa: Number(multa.toFixed(2)),
-          data_pagamento: quitada
+          data_pagamento: parcelaQuitada
             ? new Date().toISOString()
             : null,
-          forma_pagamento: recebimento.formaPagamento,
-          status: novoStatus,
-          observacao: recebimento.observacao || null,
+          forma_pagamento:
+            recebimento.formaPagamento,
+          status: parcelaQuitada
+            ? "PAGA"
+            : "PARCIAL",
+          observacao:
+            recebimento.observacao || null,
         })
         .eq("empresa_id", empresaId)
         .eq("id", parcelaRecebimento.id);
 
       if (erroParcela) {
         throw new Error(
-          `Erro ao atualizar parcela: ${erroParcela.message}`,
+          `Erro ao atualizar parcela: ${erroParcela.message}`
         );
       }
 
-      await atualizarStatusCrediario(crediarioSelecionado.id);
+      await atualizarStatusCrediario(
+        crediarioSelecionado.id
+      );
 
-      const { data: parcelasAtualizadas } = await supabase
-        .from("crediario_parcelas")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .eq("crediario_id", crediarioSelecionado.id)
-        .order("numero_parcela", { ascending: true });
+      const { data: parcelasAtualizadas } =
+        await supabase
+          .from("crediario_parcelas")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .eq(
+            "crediario_id",
+            crediarioSelecionado.id
+          )
+          .order("numero_parcela", {
+            ascending: true,
+          });
 
-      setParcelasSelecionadas(parcelasAtualizadas || []);
+      setParcelasSelecionadas(
+        parcelasAtualizadas || []
+      );
+
       setModalRecebimento(false);
       setParcelaRecebimento(null);
 
@@ -1140,8 +1229,15 @@ export default function Crediario() {
 
       alert("Pagamento registrado com sucesso.");
     } catch (error) {
-      console.error(error);
-      alert(error.message || "Não foi possível registrar o pagamento.");
+      console.error(
+        "Erro ao receber parcela:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          "Não foi possível registrar o pagamento."
+      );
     } finally {
       setRecebendo(false);
     }
@@ -1152,30 +1248,28 @@ export default function Crediario() {
 
     try {
       const dados = JSON.parse(crediario.observacao);
-      return Array.isArray(dados?.itens) ? dados.itens : [];
+
+      return Array.isArray(dados?.itens)
+        ? dados.itens
+        : [];
     } catch {
       return [];
     }
   }
 
-  function obterObservacaoCrediario(crediario) {
-    if (!crediario?.observacao) return "";
+  function imprimirPromissoria(
+    crediario,
+    parcela
+  ) {
+    const cliente = crediario?.cliente || {};
 
-    try {
-      const dados = JSON.parse(crediario.observacao);
-      return dados?.observacao || "";
-    } catch {
-      return crediario.observacao;
-    }
-  }
-
-  function imprimirPromissoria(crediario, parcela) {
-    const cliente = crediario.cliente || {};
     const numeroCrediario =
       crediario.numero_crediario ||
-      String(crediario.id).slice(0, 8).toUpperCase();
+      String(crediario.id)
+        .slice(0, 8)
+        .toUpperCase();
 
-    const valorTotalParcela =
+    const valor =
       Number(parcela.valor_parcela || 0) +
       Number(parcela.valor_juros || 0) +
       Number(parcela.valor_multa || 0) -
@@ -1183,17 +1277,23 @@ export default function Crediario() {
 
     const endereco = [
       cliente.endereco,
+      cliente.numero,
+      cliente.bairro,
       cliente.cidade,
       cliente.estado,
     ]
       .filter(Boolean)
       .join(" - ");
 
-    const janela = window.open("", "_blank", "width=900,height=700");
+    const janela = window.open(
+      "",
+      "_blank",
+      "width=900,height=700"
+    );
 
     if (!janela) {
       alert(
-        "O navegador bloqueou a janela de impressão. Autorize os pop-ups.",
+        "Autorize os pop-ups do navegador para imprimir."
       );
       return;
     }
@@ -1203,10 +1303,7 @@ export default function Crediario() {
       <html lang="pt-BR">
         <head>
           <meta charset="UTF-8" />
-
-          <title>Promissória ${numeroCrediario} - Parcela ${
-            parcela.numero_parcela
-          }</title>
+          <title>Promissória ${numeroCrediario}</title>
 
           <style>
             * {
@@ -1218,22 +1315,20 @@ export default function Crediario() {
               padding: 30px;
               font-family: Arial, Helvetica, sans-serif;
               color: #0f172a;
-              background: #ffffff;
             }
 
             .promissoria {
-              width: 100%;
               max-width: 850px;
               margin: 0 auto;
+              overflow: hidden;
               border: 2px solid #0C7886;
               border-radius: 16px;
-              overflow: hidden;
             }
 
             .cabecalho {
               display: flex;
-              justify-content: space-between;
               align-items: center;
+              justify-content: space-between;
               padding: 22px 26px;
               background: #0C7886;
               color: white;
@@ -1242,11 +1337,6 @@ export default function Crediario() {
             .cabecalho h1 {
               margin: 0;
               font-size: 26px;
-            }
-
-            .numero {
-              font-size: 14px;
-              text-align: right;
             }
 
             .conteudo {
@@ -1259,9 +1349,9 @@ export default function Crediario() {
               padding: 12px 20px;
               border: 2px solid #EE6D46;
               border-radius: 12px;
+              color: #EE6D46;
               font-size: 24px;
               font-weight: bold;
-              color: #EE6D46;
             }
 
             p {
@@ -1278,7 +1368,6 @@ export default function Crediario() {
 
             .dados div {
               margin-bottom: 9px;
-              font-size: 15px;
             }
 
             .assinatura {
@@ -1291,13 +1380,6 @@ export default function Crediario() {
               max-width: 90%;
               margin: 0 auto 8px;
               border-top: 1px solid #0f172a;
-            }
-
-            .rodape {
-              margin-top: 35px;
-              text-align: center;
-              font-size: 12px;
-              color: #64748b;
             }
 
             @media print {
@@ -1317,34 +1399,36 @@ export default function Crediario() {
             <div class="cabecalho">
               <h1>NOTA PROMISSÓRIA</h1>
 
-              <div class="numero">
+              <div>
                 <strong>Crediário nº ${numeroCrediario}</strong><br />
                 Parcela ${parcela.numero_parcela} de ${
-                  crediario.quantidade_parcelas
-                }
+      crediario.quantidade_parcelas
+    }
               </div>
             </div>
 
             <div class="conteudo">
               <div class="valor">
-                ${moeda(valorTotalParcela)}
+                ${moeda(valor)}
               </div>
 
               <p>
                 No vencimento desta nota promissória, em
-                <strong>${dataBrasil(parcela.data_vencimento)}</strong>,
+                <strong>${dataBrasil(
+                  parcela.data_vencimento
+                )}</strong>,
                 pagarei por esta única via a quantia de
-                <strong>${moeda(valorTotalParcela)}</strong>,
-                referente à parcela nº
+                <strong>${moeda(valor)}</strong>,
+                referente à parcela
                 <strong>${parcela.numero_parcela}</strong>
-                do crediário nº
+                do crediário
                 <strong>${numeroCrediario}</strong>.
               </p>
 
               <div class="dados">
                 <div>
                   <strong>Cliente:</strong>
-                  ${cliente.nome || "-"}
+                  ${obterNomeCliente(cliente)}
                 </div>
 
                 <div>
@@ -1363,198 +1447,26 @@ export default function Crediario() {
                 </div>
 
                 <div>
-                  <strong>Data da venda:</strong>
-                  ${dataBrasil(crediario.criado_em)}
-                </div>
-
-                <div>
                   <strong>Vencimento:</strong>
-                  ${dataBrasil(parcela.data_vencimento)}
+                  ${dataBrasil(
+                    parcela.data_vencimento
+                  )}
                 </div>
               </div>
 
               <div class="assinatura">
                 <div class="linha"></div>
 
-                <strong>${cliente.nome || "Assinatura do cliente"}</strong>
+                <strong>
+                  ${obterNomeCliente(cliente)}
+                </strong>
 
-                <div>CPF: ${cliente.cpf || "-"}</div>
-              </div>
-
-              <div class="rodape">
-                Documento gerado pelo sistema Smart UP.
+                <div>
+                  CPF: ${cliente.cpf || "-"}
+                </div>
               </div>
             </div>
           </div>
-
-          <script>
-            window.onload = function () {
-              window.print();
-            };
-          </script>
-        </body>
-      </html>
-    `);
-
-    janela.document.close();
-  }
-
-  function imprimirTodasPromissorias() {
-    if (!crediarioSelecionado || parcelasSelecionadas.length === 0) {
-      alert("Não existem parcelas para impressão.");
-      return;
-    }
-
-    const cliente = crediarioSelecionado.cliente || {};
-    const numeroCrediario =
-      crediarioSelecionado.numero_crediario ||
-      String(crediarioSelecionado.id).slice(0, 8).toUpperCase();
-
-    const janela = window.open("", "_blank", "width=1000,height=800");
-
-    if (!janela) {
-      alert("Autorize os pop-ups do navegador para imprimir.");
-      return;
-    }
-
-    const promissoriasHTML = parcelasSelecionadas
-      .map((parcela) => {
-        const valor =
-          Number(parcela.valor_parcela || 0) +
-          Number(parcela.valor_juros || 0) +
-          Number(parcela.valor_multa || 0) -
-          Number(parcela.valor_desconto || 0);
-
-        return `
-          <section class="promissoria">
-            <div class="topo">
-              <div>
-                <h2>NOTA PROMISSÓRIA</h2>
-                <p>Crediário nº ${numeroCrediario}</p>
-              </div>
-
-              <div class="valor">${moeda(valor)}</div>
-            </div>
-
-            <p>
-              Vencimento:
-              <strong>${dataBrasil(parcela.data_vencimento)}</strong>
-            </p>
-
-            <p>
-              Parcela:
-              <strong>${parcela.numero_parcela} de ${
-                crediarioSelecionado.quantidade_parcelas
-              }</strong>
-            </p>
-
-            <p>
-              Cliente:
-              <strong>${cliente.nome || "-"}</strong>
-            </p>
-
-            <p>
-              CPF:
-              <strong>${cliente.cpf || "-"}</strong>
-            </p>
-
-            <p class="texto">
-              Pagarei por esta única via a quantia indicada nesta nota
-              promissória, referente à compra realizada no crediário.
-            </p>
-
-            <div class="assinatura">
-              <div class="linha"></div>
-              ${cliente.nome || "Assinatura do cliente"}
-            </div>
-          </section>
-        `;
-      })
-      .join("");
-
-    janela.document.write(`
-      <!DOCTYPE html>
-      <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8" />
-
-          <title>Promissórias ${numeroCrediario}</title>
-
-          <style>
-            * {
-              box-sizing: border-box;
-            }
-
-            body {
-              margin: 0;
-              padding: 20px;
-              font-family: Arial, sans-serif;
-              color: #0f172a;
-            }
-
-            .promissoria {
-              min-height: 360px;
-              margin-bottom: 22px;
-              padding: 26px;
-              border: 2px solid #0C7886;
-              border-radius: 14px;
-              page-break-inside: avoid;
-            }
-
-            .topo {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              border-bottom: 1px solid #cbd5e1;
-              padding-bottom: 16px;
-            }
-
-            h2 {
-              margin: 0;
-              color: #0C7886;
-            }
-
-            .topo p {
-              margin: 5px 0 0;
-            }
-
-            .valor {
-              font-size: 24px;
-              font-weight: bold;
-              color: #EE6D46;
-            }
-
-            .texto {
-              margin-top: 30px;
-              line-height: 1.7;
-            }
-
-            .assinatura {
-              margin-top: 65px;
-              text-align: center;
-            }
-
-            .linha {
-              width: 400px;
-              max-width: 90%;
-              margin: 0 auto 8px;
-              border-top: 1px solid #0f172a;
-            }
-
-            @media print {
-              body {
-                padding: 0;
-              }
-
-              .promissoria {
-                border-radius: 0;
-              }
-            }
-          </style>
-        </head>
-
-        <body>
-          ${promissoriasHTML}
 
           <script>
             window.onload = function () {
@@ -1577,8 +1489,8 @@ export default function Crediario() {
           </h1>
 
           <p className="mt-3 text-red-600">
-            Não foi possível encontrar a empresa ativa no
-            localStorage pela chave smartup_empresa.
+            Não foi possível encontrar a empresa ativa na
+            chave smartup_empresa.
           </p>
         </div>
       </div>
@@ -1594,17 +1506,20 @@ export default function Crediario() {
               Smart UP
             </p>
 
-            <h1 className="mt-1 text-3xl font-black">Crediário</h1>
+            <h1 className="mt-1 text-3xl font-black">
+              Crediário
+            </h1>
 
             <p className="mt-2 text-sm text-white/80">
-              Vendas parceladas, promissórias e recebimentos.
+              Vendas parceladas, promissórias e
+              recebimentos.
             </p>
           </div>
 
           <button
             type="button"
             onClick={abrirNovaVenda}
-            className="rounded-2xl bg-[#EE6D46] px-6 py-3 font-black text-white shadow-md transition hover:scale-[1.02] hover:bg-orange-600"
+            className="rounded-2xl bg-[#EE6D46] px-6 py-3 font-black text-white shadow-md transition hover:bg-orange-600"
           >
             + Nova venda no crediário
           </button>
@@ -1620,19 +1535,19 @@ export default function Crediario() {
           <StatCard
             titulo="Total vencido"
             valor={moeda(indicadores.totalVencido)}
-            descricao="Parcelas que passaram do vencimento"
+            descricao="Parcelas atrasadas"
           />
 
           <StatCard
             titulo="Total recebido"
             valor={moeda(indicadores.totalRecebido)}
-            descricao="Valor registrado em parcelas"
+            descricao="Valor recebido em parcelas"
           />
 
           <StatCard
             titulo="Clientes inadimplentes"
             valor={indicadores.inadimplentes}
-            descricao="Clientes com parcelas atrasadas"
+            descricao="Clientes com atraso"
           />
         </section>
 
@@ -1641,9 +1556,11 @@ export default function Crediario() {
             <input
               type="text"
               value={pesquisa}
-              onChange={(event) => setPesquisa(event.target.value)}
-              placeholder="Pesquisar por cliente, CPF ou número..."
-              className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-[#27B9B3] focus:ring-4 focus:ring-[#27B9B3]/10"
+              onChange={(event) =>
+                setPesquisa(event.target.value)
+              }
+              placeholder="Pesquisar cliente, CPF ou número..."
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-[#27B9B3]"
             />
 
             <select
@@ -1651,22 +1568,35 @@ export default function Crediario() {
               onChange={(event) =>
                 setFiltroStatus(event.target.value)
               }
-              className="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-[#27B9B3]"
+              className="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none"
             >
-              <option value="TODOS">Todos os status</option>
+              <option value="TODOS">
+                Todos os status
+              </option>
+
               <option value="ABERTO">Aberto</option>
+
               <option value="PARCIALMENTE_PAGO">
                 Parcialmente pago
               </option>
-              <option value="ATRASADO">Atrasado</option>
-              <option value="QUITADO">Quitado</option>
-              <option value="CANCELADO">Cancelado</option>
+
+              <option value="ATRASADO">
+                Atrasado
+              </option>
+
+              <option value="QUITADO">
+                Quitado
+              </option>
+
+              <option value="CANCELADO">
+                Cancelado
+              </option>
             </select>
 
             <button
               type="button"
               onClick={carregarTudo}
-              className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-700"
+              className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white"
             >
               Atualizar
             </button>
@@ -1685,7 +1615,7 @@ export default function Crediario() {
               </p>
 
               <p className="mt-2 text-sm text-slate-400">
-                Cadastre uma nova venda no crediário.
+                Clique em nova venda para cadastrar.
               </p>
             </div>
           ) : (
@@ -1693,100 +1623,112 @@ export default function Crediario() {
               <table className="min-w-full">
                 <thead className="bg-slate-100">
                   <tr>
-                    <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4 text-left text-xs font-black uppercase text-slate-500">
                       Número
                     </th>
 
-                    <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4 text-left text-xs font-black uppercase text-slate-500">
                       Cliente
                     </th>
 
-                    <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-wide text-slate-500">
-                      Venda
+                    <th className="px-5 py-4 text-left text-xs font-black uppercase text-slate-500">
+                      Total
                     </th>
 
-                    <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4 text-left text-xs font-black uppercase text-slate-500">
                       Entrada
                     </th>
 
-                    <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4 text-left text-xs font-black uppercase text-slate-500">
                       Parcelas
                     </th>
 
-                    <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4 text-left text-xs font-black uppercase text-slate-500">
                       Status
                     </th>
 
-                    <th className="px-5 py-4 text-right text-xs font-black uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4 text-right text-xs font-black uppercase text-slate-500">
                       Ações
                     </th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
-                  {crediariosFiltrados.map((crediario) => (
-                    <tr
-                      key={crediario.id}
-                      className="transition hover:bg-slate-50"
-                    >
-                      <td className="px-5 py-4 text-sm font-black text-slate-700">
-                        #
-                        {crediario.numero_crediario ||
-                          String(crediario.id)
-                            .slice(0, 8)
-                            .toUpperCase()}
-                      </td>
+                  {crediariosFiltrados.map(
+                    (crediario) => (
+                      <tr
+                        key={crediario.id}
+                        className="hover:bg-slate-50"
+                      >
+                        <td className="px-5 py-4 text-sm font-black text-slate-700">
+                          #
+                          {crediario.numero_crediario ||
+                            String(crediario.id)
+                              .slice(0, 8)
+                              .toUpperCase()}
+                        </td>
 
-                      <td className="px-5 py-4">
-                        <p className="text-sm font-bold text-slate-800">
-                          {crediario.cliente?.nome || "-"}
-                        </p>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-bold text-slate-800">
+                            {obterNomeCliente(
+                              crediario.cliente
+                            )}
+                          </p>
 
-                        <p className="mt-1 text-xs text-slate-400">
-                          CPF: {crediario.cliente?.cpf || "-"}
-                        </p>
-                      </td>
+                          <p className="mt-1 text-xs text-slate-400">
+                            CPF:{" "}
+                            {crediario.cliente?.cpf ||
+                              "-"}
+                          </p>
+                        </td>
 
-                      <td className="px-5 py-4">
-                        <p className="text-sm font-black text-slate-800">
-                          {moeda(crediario.valor_total)}
-                        </p>
+                        <td className="px-5 py-4 text-sm font-black text-slate-800">
+                          {moeda(
+                            crediario.valor_total
+                          )}
+                        </td>
 
-                        <p className="mt-1 text-xs text-slate-400">
-                          {dataBrasil(crediario.criado_em)}
-                        </p>
-                      </td>
+                        <td className="px-5 py-4 text-sm text-slate-700">
+                          {moeda(
+                            crediario.valor_entrada
+                          )}
+                        </td>
 
-                      <td className="px-5 py-4 text-sm font-semibold text-slate-700">
-                        {moeda(crediario.valor_entrada)}
-                      </td>
+                        <td className="px-5 py-4 text-sm text-slate-600">
+                          {
+                            crediario.quantidade_parcelas
+                          }
+                          x
+                        </td>
 
-                      <td className="px-5 py-4 text-sm text-slate-600">
-                        {crediario.quantidade_parcelas}x
-                      </td>
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${classeStatus(
+                              crediario.status
+                            )}`}
+                          >
+                            {STATUS_CREDIARIO[
+                              crediario.status
+                            ] || crediario.status}
+                          </span>
+                        </td>
 
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${classeStatus(
-                            crediario.status,
-                          )}`}
-                        >
-                          {STATUS_CREDIARIO[crediario.status] ||
-                            crediario.status}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => abrirDetalhes(crediario)}
-                          className="rounded-xl bg-[#0C7886] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#095f6a]"
-                        >
-                          Ver parcelas
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-5 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              abrirDetalhes(
+                                crediario
+                              )
+                            }
+                            className="rounded-xl bg-[#0C7886] px-4 py-2 text-xs font-bold text-white"
+                          >
+                            Ver parcelas
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1804,7 +1746,7 @@ export default function Crediario() {
           <div className="space-y-6">
             <section className="rounded-3xl border border-slate-200 p-5">
               <h3 className="text-lg font-black text-slate-900">
-                1. Selecione o cliente
+                1. Cliente
               </h3>
 
               {!clienteSelecionado ? (
@@ -1813,40 +1755,52 @@ export default function Crediario() {
                     type="text"
                     value={pesquisaCliente}
                     onChange={(event) =>
-                      setPesquisaCliente(event.target.value)
+                      setPesquisaCliente(
+                        event.target.value
+                      )
                     }
                     placeholder="Pesquisar cliente por nome, CPF ou telefone..."
                     className="mt-4 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#27B9B3]"
                   />
 
                   <div className="mt-3 max-h-64 overflow-y-auto rounded-2xl border border-slate-200">
-                    {clientesFiltrados.map((cliente) => (
-                      <button
-                        key={cliente.id}
-                        type="button"
-                        onClick={() =>
-                          setClienteSelecionado(cliente)
-                        }
-                        className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-slate-50"
-                      >
-                        <div>
-                          <p className="font-bold text-slate-800">
-                            {cliente.nome}
-                          </p>
+                    {clientesFiltrados.map(
+                      (cliente) => (
+                        <button
+                          key={cliente.id}
+                          type="button"
+                          onClick={() =>
+                            setClienteSelecionado(
+                              cliente
+                            )
+                          }
+                          className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
+                        >
+                          <div>
+                            <p className="font-bold text-slate-800">
+                              {obterNomeCliente(
+                                cliente
+                              )}
+                            </p>
 
-                          <p className="mt-1 text-xs text-slate-400">
-                            CPF: {cliente.cpf || "-"} · Telefone:{" "}
-                            {cliente.telefone || "-"}
-                          </p>
-                        </div>
+                            <p className="mt-1 text-xs text-slate-400">
+                              CPF:{" "}
+                              {cliente.cpf || "-"} ·
+                              Telefone:{" "}
+                              {cliente.telefone ||
+                                "-"}
+                            </p>
+                          </div>
 
-                        <span className="text-sm font-bold text-[#0C7886]">
-                          Selecionar
-                        </span>
-                      </button>
-                    ))}
+                          <span className="text-sm font-bold text-[#0C7886]">
+                            Selecionar
+                          </span>
+                        </button>
+                      )
+                    )}
 
-                    {clientesFiltrados.length === 0 && (
+                    {clientesFiltrados.length ===
+                      0 && (
                       <p className="p-5 text-center text-sm text-slate-400">
                         Nenhum cliente encontrado.
                       </p>
@@ -1858,22 +1812,23 @@ export default function Crediario() {
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="font-black text-emerald-800">
-                        {clienteSelecionado.nome}
+                        {obterNomeCliente(
+                          clienteSelecionado
+                        )}
                       </p>
 
                       <p className="mt-1 text-sm text-emerald-700">
-                        CPF: {clienteSelecionado.cpf || "-"}
-                      </p>
-
-                      <p className="mt-1 text-sm text-emerald-700">
-                        Telefone:{" "}
-                        {clienteSelecionado.telefone || "-"}
+                        CPF:{" "}
+                        {clienteSelecionado.cpf ||
+                          "-"}
                       </p>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => setClienteSelecionado(null)}
+                      onClick={() =>
+                        setClienteSelecionado(null)
+                      }
                       className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-red-600"
                     >
                       Trocar
@@ -1885,49 +1840,64 @@ export default function Crediario() {
 
             <section className="rounded-3xl border border-slate-200 p-5">
               <h3 className="text-lg font-black text-slate-900">
-                2. Adicione os produtos
+                2. Produtos
               </h3>
 
               <input
                 type="text"
                 value={pesquisaProduto}
                 onChange={(event) =>
-                  setPesquisaProduto(event.target.value)
+                  setPesquisaProduto(
+                    event.target.value
+                  )
                 }
                 placeholder="Pesquisar produto por nome ou código..."
                 className="mt-4 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#27B9B3]"
               />
 
               <div className="mt-3 max-h-64 overflow-y-auto rounded-2xl border border-slate-200">
-                {produtosFiltrados.map((produto) => (
-                  <div
-                    key={produto.id}
-                    className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 last:border-b-0"
-                  >
-                    <div>
-                      <p className="font-bold text-slate-800">
-                        {produto.nome}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-400">
-                        Código: {produto.codigo || "-"} · Estoque:{" "}
-                        {produto.estoque}
-                      </p>
-
-                      <p className="mt-1 text-sm font-black text-[#0C7886]">
-                        {moeda(produto.preco)}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => adicionarProduto(produto)}
-                      className="rounded-xl bg-[#27B9B3] px-4 py-2 text-sm font-bold text-white"
+                {produtosFiltrados.map(
+                  (produto) => (
+                    <div
+                      key={produto.id}
+                      className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-3"
                     >
-                      Adicionar
-                    </button>
-                  </div>
-                ))}
+                      <div>
+                        <p className="font-bold text-slate-800">
+                          {produto.nome}
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-400">
+                          Código:{" "}
+                          {produto.codigo || "-"} ·
+                          Estoque:{" "}
+                          {produto.estoque}
+                        </p>
+
+                        <p className="mt-1 text-sm font-black text-[#0C7886]">
+                          {moeda(produto.preco)}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          adicionarProduto(produto)
+                        }
+                        className="rounded-xl bg-[#27B9B3] px-4 py-2 text-sm font-bold text-white"
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+                  )
+                )}
+
+                {produtosFiltrados.length ===
+                  0 && (
+                  <p className="p-5 text-center text-sm text-slate-400">
+                    Nenhum produto disponível.
+                  </p>
+                )}
               </div>
 
               {itens.length > 0 && (
@@ -1955,17 +1925,14 @@ export default function Crediario() {
                       </tr>
                     </thead>
 
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody>
                       {itens.map((item) => (
-                        <tr key={item.produto_id}>
-                          <td className="px-4 py-3">
-                            <p className="text-sm font-bold text-slate-800">
-                              {item.nome}
-                            </p>
-
-                            <p className="text-xs text-slate-400">
-                              Estoque: {item.estoque}
-                            </p>
+                        <tr
+                          key={item.produto_id}
+                          className="border-b border-slate-100"
+                        >
+                          <td className="px-4 py-3 text-sm font-bold text-slate-800">
+                            {item.nome}
                           </td>
 
                           <td className="px-4 py-3">
@@ -1973,11 +1940,13 @@ export default function Crediario() {
                               type="number"
                               min="1"
                               max={item.estoque}
-                              value={item.quantidade}
+                              value={
+                                item.quantidade
+                              }
                               onChange={(event) =>
                                 alterarQuantidade(
                                   item.produto_id,
-                                  event.target.value,
+                                  event.target.value
                                 )
                               }
                               className="w-24 rounded-xl border border-slate-300 px-3 py-2"
@@ -1993,7 +1962,7 @@ export default function Crediario() {
                               onChange={(event) =>
                                 alterarPreco(
                                   item.produto_id,
-                                  event.target.value,
+                                  event.target.value
                                 )
                               }
                               className="w-32 rounded-xl border border-slate-300 px-3 py-2"
@@ -2003,7 +1972,9 @@ export default function Crediario() {
                           <td className="px-4 py-3 text-sm font-black text-slate-800">
                             {moeda(
                               Number(item.preco) *
-                                Number(item.quantidade),
+                                Number(
+                                  item.quantidade
+                                )
                             )}
                           </td>
 
@@ -2011,7 +1982,9 @@ export default function Crediario() {
                             <button
                               type="button"
                               onClick={() =>
-                                removerProduto(item.produto_id)
+                                removerProduto(
+                                  item.produto_id
+                                )
                               }
                               className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600"
                             >
@@ -2034,7 +2007,7 @@ export default function Crediario() {
               </h3>
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="block">
+                <label>
                   <span className="text-sm font-bold text-slate-600">
                     Valor da entrada
                   </span>
@@ -2043,18 +2016,23 @@ export default function Crediario() {
                     type="number"
                     min="0"
                     step="0.01"
-                    value={parcelamento.valorEntrada}
-                    onChange={(event) =>
-                      setParcelamento((anterior) => ({
-                        ...anterior,
-                        valorEntrada: event.target.value,
-                      }))
+                    value={
+                      parcelamento.valorEntrada
                     }
-                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#27B9B3]"
+                    onChange={(event) =>
+                      setParcelamento(
+                        (anterior) => ({
+                          ...anterior,
+                          valorEntrada:
+                            event.target.value,
+                        })
+                      )
+                    }
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                   />
                 </label>
 
-                <label className="block">
+                <label>
                   <span className="text-sm font-bold text-slate-600">
                     Quantidade de parcelas
                   </span>
@@ -2063,81 +2041,96 @@ export default function Crediario() {
                     type="number"
                     min="1"
                     max="120"
-                    value={parcelamento.quantidadeParcelas}
-                    onChange={(event) =>
-                      setParcelamento((anterior) => ({
-                        ...anterior,
-                        quantidadeParcelas: event.target.value,
-                      }))
+                    value={
+                      parcelamento.quantidadeParcelas
                     }
-                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#27B9B3]"
+                    onChange={(event) =>
+                      setParcelamento(
+                        (anterior) => ({
+                          ...anterior,
+                          quantidadeParcelas:
+                            event.target.value,
+                        })
+                      )
+                    }
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                   />
                 </label>
 
-                <label className="block sm:col-span-2">
+                <label className="sm:col-span-2">
                   <span className="text-sm font-bold text-slate-600">
                     Primeiro vencimento
                   </span>
 
                   <input
                     type="date"
-                    value={parcelamento.primeiroVencimento}
-                    onChange={(event) =>
-                      setParcelamento((anterior) => ({
-                        ...anterior,
-                        primeiroVencimento: event.target.value,
-                      }))
+                    value={
+                      parcelamento.primeiroVencimento
                     }
-                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#27B9B3]"
+                    onChange={(event) =>
+                      setParcelamento(
+                        (anterior) => ({
+                          ...anterior,
+                          primeiroVencimento:
+                            event.target.value,
+                        })
+                      )
+                    }
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                   />
                 </label>
 
-                <label className="block sm:col-span-2">
+                <label className="sm:col-span-2">
                   <span className="text-sm font-bold text-slate-600">
                     Observação
                   </span>
 
                   <textarea
                     rows="3"
-                    value={parcelamento.observacao}
-                    onChange={(event) =>
-                      setParcelamento((anterior) => ({
-                        ...anterior,
-                        observacao: event.target.value,
-                      }))
+                    value={
+                      parcelamento.observacao
                     }
-                    className="mt-2 w-full resize-none rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#27B9B3]"
+                    onChange={(event) =>
+                      setParcelamento(
+                        (anterior) => ({
+                          ...anterior,
+                          observacao:
+                            event.target.value,
+                        })
+                      )
+                    }
+                    className="mt-2 w-full resize-none rounded-2xl border border-slate-300 px-4 py-3"
                   />
                 </label>
               </div>
             </section>
 
             <section className="rounded-3xl bg-slate-900 p-5 text-white">
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">
-                    Total da venda
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">
+                  Total da venda
+                </span>
+
+                <strong>{moeda(totalVenda)}</strong>
+              </div>
+
+              <div className="mt-3 flex justify-between text-sm">
+                <span className="text-slate-400">
+                  Entrada
+                </span>
+
+                <strong>{moeda(valorEntrada)}</strong>
+              </div>
+
+              <div className="mt-3 border-t border-slate-700 pt-3">
+                <div className="flex justify-between">
+                  <span className="font-bold">
+                    Valor financiado
                   </span>
 
-                  <strong>{moeda(totalVenda)}</strong>
-                </div>
-
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Entrada</span>
-
-                  <strong>{moeda(valorEntrada)}</strong>
-                </div>
-
-                <div className="border-t border-slate-700 pt-3">
-                  <div className="flex justify-between">
-                    <span className="font-bold">
-                      Valor financiado
-                    </span>
-
-                    <strong className="text-xl text-[#27B9B3]">
-                      {moeda(valorFinanciado)}
-                    </strong>
-                  </div>
+                  <strong className="text-xl text-[#27B9B3]">
+                    {moeda(valorFinanciado)}
+                  </strong>
                 </div>
               </div>
             </section>
@@ -2148,34 +2141,47 @@ export default function Crediario() {
               </h3>
 
               <div className="mt-4 max-h-72 overflow-y-auto">
-                {parcelasPrevias.map((parcela) => (
-                  <div
-                    key={parcela.numero_parcela}
-                    className="mb-2 flex items-center justify-between rounded-2xl bg-slate-50 p-3"
-                  >
-                    <div>
-                      <p className="text-sm font-black text-slate-700">
-                        Parcela {parcela.numero_parcela}
-                      </p>
+                {parcelasPrevias.map(
+                  (parcela) => (
+                    <div
+                      key={
+                        parcela.numero_parcela
+                      }
+                      className="mb-2 flex items-center justify-between rounded-2xl bg-slate-50 p-3"
+                    >
+                      <div>
+                        <p className="text-sm font-black text-slate-700">
+                          Parcela{" "}
+                          {
+                            parcela.numero_parcela
+                          }
+                        </p>
 
-                      <p className="text-xs text-slate-400">
-                        {dataBrasil(parcela.data_vencimento)}
-                      </p>
+                        <p className="text-xs text-slate-400">
+                          {dataBrasil(
+                            parcela.data_vencimento
+                          )}
+                        </p>
+                      </div>
+
+                      <strong className="text-[#0C7886]">
+                        {moeda(
+                          parcela.valor_parcela
+                        )}
+                      </strong>
                     </div>
-
-                    <strong className="text-[#0C7886]">
-                      {moeda(parcela.valor_parcela)}
-                    </strong>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             </section>
 
             <button
               type="button"
-              onClick={finalizarVendaCrediario}
+              onClick={
+                finalizarVendaCrediario
+              }
               disabled={salvando}
-              className="w-full rounded-2xl bg-[#EE6D46] px-6 py-4 font-black text-white shadow-md transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-2xl bg-[#EE6D46] px-6 py-4 font-black text-white disabled:opacity-60"
             >
               {salvando
                 ? "Finalizando venda..."
@@ -2200,26 +2206,29 @@ export default function Crediario() {
             <div className="grid gap-4 md:grid-cols-4">
               <StatCard
                 titulo="Cliente"
-                valor={crediarioSelecionado.cliente?.nome || "-"}
-                descricao={
-                  crediarioSelecionado.cliente?.cpf
-                    ? `CPF: ${crediarioSelecionado.cliente.cpf}`
-                    : "CPF não informado"
-                }
+                valor={obterNomeCliente(
+                  crediarioSelecionado.cliente
+                )}
+                descricao={`CPF: ${
+                  crediarioSelecionado.cliente
+                    ?.cpf || "-"
+                }`}
               />
 
               <StatCard
                 titulo="Valor da venda"
-                valor={moeda(crediarioSelecionado.valor_total)}
+                valor={moeda(
+                  crediarioSelecionado.valor_total
+                )}
                 descricao={`Entrada: ${moeda(
-                  crediarioSelecionado.valor_entrada,
+                  crediarioSelecionado.valor_entrada
                 )}`}
               />
 
               <StatCard
                 titulo="Valor financiado"
                 valor={moeda(
-                  crediarioSelecionado.valor_financiado,
+                  crediarioSelecionado.valor_financiado
                 )}
                 descricao={`${crediarioSelecionado.quantidade_parcelas} parcelas`}
               />
@@ -2229,15 +2238,18 @@ export default function Crediario() {
                 valor={
                   STATUS_CREDIARIO[
                     crediarioSelecionado.status
-                  ] || crediarioSelecionado.status
+                  ] ||
+                  crediarioSelecionado.status
                 }
                 descricao={`Criado em ${dataBrasil(
-                  crediarioSelecionado.criado_em,
+                  crediarioSelecionado.criado_em
                 )}`}
               />
             </div>
 
-            {obterItensCrediario(crediarioSelecionado).length > 0 && (
+            {obterItensCrediario(
+              crediarioSelecionado
+            ).length > 0 && (
               <section className="mt-6 rounded-3xl border border-slate-200 p-5">
                 <h3 className="font-black text-slate-900">
                   Produtos da venda
@@ -2256,7 +2268,7 @@ export default function Crediario() {
                         </th>
 
                         <th className="px-4 py-3 text-left text-xs font-black text-slate-500">
-                          Unitário
+                          Valor
                         </th>
 
                         <th className="px-4 py-3 text-left text-xs font-black text-slate-500">
@@ -2267,25 +2279,27 @@ export default function Crediario() {
 
                     <tbody>
                       {obterItensCrediario(
-                        crediarioSelecionado,
+                        crediarioSelecionado
                       ).map((item, indice) => (
                         <tr
                           key={`${item.produto_id}-${indice}`}
                           className="border-b border-slate-100"
                         >
-                          <td className="px-4 py-3 text-sm font-bold text-slate-800">
+                          <td className="px-4 py-3 text-sm font-bold">
                             {item.nome}
                           </td>
 
-                          <td className="px-4 py-3 text-sm text-slate-600">
+                          <td className="px-4 py-3 text-sm">
                             {item.quantidade}
                           </td>
 
-                          <td className="px-4 py-3 text-sm text-slate-600">
-                            {moeda(item.preco_unitario)}
+                          <td className="px-4 py-3 text-sm">
+                            {moeda(
+                              item.preco_unitario
+                            )}
                           </td>
 
-                          <td className="px-4 py-3 text-sm font-black text-slate-800">
+                          <td className="px-4 py-3 text-sm font-black">
                             {moeda(item.subtotal)}
                           </td>
                         </tr>
@@ -2293,39 +2307,13 @@ export default function Crediario() {
                     </tbody>
                   </table>
                 </div>
-
-                {obterObservacaoCrediario(
-                  crediarioSelecionado,
-                ) && (
-                  <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-                    <p className="text-xs font-black uppercase text-slate-400">
-                      Observação
-                    </p>
-
-                    <p className="mt-2 text-sm text-slate-600">
-                      {obterObservacaoCrediario(
-                        crediarioSelecionado,
-                      )}
-                    </p>
-                  </div>
-                )}
               </section>
             )}
 
             <section className="mt-6 rounded-3xl border border-slate-200 p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-lg font-black text-slate-900">
-                  Parcelas
-                </h3>
-
-                <button
-                  type="button"
-                  onClick={imprimirTodasPromissorias}
-                  className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white"
-                >
-                  Imprimir todas as promissórias
-                </button>
-              </div>
+              <h3 className="text-lg font-black text-slate-900">
+                Parcelas
+              </h3>
 
               <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
                 <table className="min-w-full">
@@ -2361,87 +2349,99 @@ export default function Crediario() {
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-slate-100">
-                    {parcelasSelecionadas.map((parcela) => (
-                      <tr key={parcela.id}>
-                        <td className="px-4 py-3 text-sm font-black text-slate-700">
-                          {parcela.numero_parcela}/
-                          {
-                            crediarioSelecionado.quantidade_parcelas
-                          }
-                        </td>
+                  <tbody>
+                    {parcelasSelecionadas.map(
+                      (parcela) => (
+                        <tr
+                          key={parcela.id}
+                          className="border-b border-slate-100"
+                        >
+                          <td className="px-4 py-3 text-sm font-black">
+                            {
+                              parcela.numero_parcela
+                            }
+                            /
+                            {
+                              crediarioSelecionado.quantidade_parcelas
+                            }
+                          </td>
 
-                        <td className="px-4 py-3 text-sm text-slate-600">
-                          {dataBrasil(parcela.data_vencimento)}
-                        </td>
+                          <td className="px-4 py-3 text-sm">
+                            {dataBrasil(
+                              parcela.data_vencimento
+                            )}
+                          </td>
 
-                        <td className="px-4 py-3 text-sm font-bold text-slate-700">
-                          {moeda(parcela.valor_parcela)}
-                        </td>
+                          <td className="px-4 py-3 text-sm font-bold">
+                            {moeda(
+                              parcela.valor_parcela
+                            )}
+                          </td>
 
-                        <td className="px-4 py-3 text-sm text-emerald-700">
-                          {moeda(parcela.valor_pago)}
-                        </td>
+                          <td className="px-4 py-3 text-sm text-emerald-700">
+                            {moeda(
+                              parcela.valor_pago
+                            )}
+                          </td>
 
-                        <td className="px-4 py-3 text-sm font-black text-slate-800">
-                          {moeda(calcularSaldoParcela(parcela))}
-                        </td>
+                          <td className="px-4 py-3 text-sm font-black">
+                            {moeda(
+                              calcularSaldoParcela(
+                                parcela
+                              )
+                            )}
+                          </td>
 
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${classeStatus(
-                              parcela.status,
-                            )}`}
-                          >
-                            {STATUS_PARCELA[parcela.status] ||
-                              parcela.status}
-                          </span>
-                        </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${classeStatus(
+                                parcela.status
+                              )}`}
+                            >
+                              {STATUS_PARCELA[
+                                parcela.status
+                              ] || parcela.status}
+                            </span>
+                          </td>
 
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            {![
-                              "PAGA",
-                              "CANCELADA",
-                              "RENEGOCIADA",
-                            ].includes(parcela.status) && (
+                          <td className="px-4 py-3">
+                            <div className="flex justify-end gap-2">
+                              {![
+                                "PAGA",
+                                "CANCELADA",
+                                "RENEGOCIADA",
+                              ].includes(
+                                parcela.status
+                              ) && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    abrirRecebimento(
+                                      parcela
+                                    )
+                                  }
+                                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white"
+                                >
+                                  Receber
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() =>
-                                  abrirRecebimento(parcela)
+                                  imprimirPromissoria(
+                                    crediarioSelecionado,
+                                    parcela
+                                  )
                                 }
-                                className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white"
+                                className="rounded-xl bg-[#0C7886] px-3 py-2 text-xs font-bold text-white"
                               >
-                                Receber
+                                Promissória
                               </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                imprimirPromissoria(
-                                  crediarioSelecionado,
-                                  parcela,
-                                )
-                              }
-                              className="rounded-xl bg-[#0C7886] px-3 py-2 text-xs font-bold text-white"
-                            >
-                              Promissória
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-
-                    {parcelasSelecionadas.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan="7"
-                          className="p-8 text-center text-sm text-slate-400"
-                        >
-                          Nenhuma parcela encontrada.
-                        </td>
-                      </tr>
+                            </div>
+                          </td>
+                        </tr>
+                      )
                     )}
                   </tbody>
                 </table>
@@ -2456,6 +2456,7 @@ export default function Crediario() {
         titulo="Receber parcela"
         fechar={() => {
           if (recebendo) return;
+
           setModalRecebimento(false);
           setParcelaRecebimento(null);
         }}
@@ -2465,21 +2466,31 @@ export default function Crediario() {
           <div>
             <div className="rounded-3xl bg-slate-900 p-5 text-white">
               <p className="text-sm text-slate-400">
-                Parcela {parcelaRecebimento.numero_parcela}
+                Parcela{" "}
+                {
+                  parcelaRecebimento.numero_parcela
+                }
               </p>
 
               <p className="mt-2 text-2xl font-black">
-                Saldo: {moeda(calcularSaldoParcela(parcelaRecebimento))}
+                Saldo:{" "}
+                {moeda(
+                  calcularSaldoParcela(
+                    parcelaRecebimento
+                  )
+                )}
               </p>
 
               <p className="mt-2 text-sm text-slate-400">
                 Vencimento:{" "}
-                {dataBrasil(parcelaRecebimento.data_vencimento)}
+                {dataBrasil(
+                  parcelaRecebimento.data_vencimento
+                )}
               </p>
             </div>
 
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="block sm:col-span-2">
+              <label className="sm:col-span-2">
                 <span className="text-sm font-bold text-slate-600">
                   Valor recebido
                 </span>
@@ -2490,39 +2501,52 @@ export default function Crediario() {
                   step="0.01"
                   value={recebimento.valor}
                   onChange={(event) =>
-                    setRecebimento((anterior) => ({
-                      ...anterior,
-                      valor: event.target.value,
-                    }))
+                    setRecebimento(
+                      (anterior) => ({
+                        ...anterior,
+                        valor:
+                          event.target.value,
+                      })
+                    )
                   }
-                  className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-[#27B9B3]"
+                  className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                 />
               </label>
 
-              <label className="block sm:col-span-2">
+              <label className="sm:col-span-2">
                 <span className="text-sm font-bold text-slate-600">
                   Forma de pagamento
                 </span>
 
                 <select
-                  value={recebimento.formaPagamento}
-                  onChange={(event) =>
-                    setRecebimento((anterior) => ({
-                      ...anterior,
-                      formaPagamento: event.target.value,
-                    }))
+                  value={
+                    recebimento.formaPagamento
                   }
-                  className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none"
+                  onChange={(event) =>
+                    setRecebimento(
+                      (anterior) => ({
+                        ...anterior,
+                        formaPagamento:
+                          event.target.value,
+                      })
+                    )
+                  }
+                  className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                 >
-                  {FORMAS_PAGAMENTO.map((forma) => (
-                    <option key={forma} value={forma}>
-                      {forma}
-                    </option>
-                  ))}
+                  {FORMAS_PAGAMENTO.map(
+                    (forma) => (
+                      <option
+                        key={forma}
+                        value={forma}
+                      >
+                        {forma}
+                      </option>
+                    )
+                  )}
                 </select>
               </label>
 
-              <label className="block">
+              <label>
                 <span className="text-sm font-bold text-slate-600">
                   Desconto
                 </span>
@@ -2533,16 +2557,19 @@ export default function Crediario() {
                   step="0.01"
                   value={recebimento.desconto}
                   onChange={(event) =>
-                    setRecebimento((anterior) => ({
-                      ...anterior,
-                      desconto: event.target.value,
-                    }))
+                    setRecebimento(
+                      (anterior) => ({
+                        ...anterior,
+                        desconto:
+                          event.target.value,
+                      })
+                    )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                 />
               </label>
 
-              <label className="block">
+              <label>
                 <span className="text-sm font-bold text-slate-600">
                   Juros
                 </span>
@@ -2553,16 +2580,19 @@ export default function Crediario() {
                   step="0.01"
                   value={recebimento.juros}
                   onChange={(event) =>
-                    setRecebimento((anterior) => ({
-                      ...anterior,
-                      juros: event.target.value,
-                    }))
+                    setRecebimento(
+                      (anterior) => ({
+                        ...anterior,
+                        juros:
+                          event.target.value,
+                      })
+                    )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                 />
               </label>
 
-              <label className="block">
+              <label>
                 <span className="text-sm font-bold text-slate-600">
                   Multa
                 </span>
@@ -2573,28 +2603,36 @@ export default function Crediario() {
                   step="0.01"
                   value={recebimento.multa}
                   onChange={(event) =>
-                    setRecebimento((anterior) => ({
-                      ...anterior,
-                      multa: event.target.value,
-                    }))
+                    setRecebimento(
+                      (anterior) => ({
+                        ...anterior,
+                        multa:
+                          event.target.value,
+                      })
+                    )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
                 />
               </label>
 
-              <label className="block sm:col-span-2">
+              <label className="sm:col-span-2">
                 <span className="text-sm font-bold text-slate-600">
                   Observação
                 </span>
 
                 <textarea
                   rows="3"
-                  value={recebimento.observacao}
+                  value={
+                    recebimento.observacao
+                  }
                   onChange={(event) =>
-                    setRecebimento((anterior) => ({
-                      ...anterior,
-                      observacao: event.target.value,
-                    }))
+                    setRecebimento(
+                      (anterior) => ({
+                        ...anterior,
+                        observacao:
+                          event.target.value,
+                      })
+                    )
                   }
                   className="mt-2 w-full resize-none rounded-2xl border border-slate-300 px-4 py-3"
                 />
@@ -2605,7 +2643,7 @@ export default function Crediario() {
               type="button"
               onClick={confirmarRecebimento}
               disabled={recebendo}
-              className="mt-6 w-full rounded-2xl bg-emerald-600 px-5 py-4 font-black text-white transition hover:bg-emerald-700 disabled:opacity-60"
+              className="mt-6 w-full rounded-2xl bg-emerald-600 px-5 py-4 font-black text-white disabled:opacity-60"
             >
               {recebendo
                 ? "Registrando pagamento..."
