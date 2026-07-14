@@ -11,6 +11,7 @@ import Produtos from "./pages/Produtos";
 import Clientes from "./pages/Clientes";
 import Relatorio from "./pages/Relatorio";
 import OrdemServico from "./pages/OrdemServico";
+import Crediario from "./pages/Crediario";
 
 export default function App() {
   return (
@@ -79,6 +80,15 @@ export default function App() {
                     element={
                       <ModuleRoute modulo="modulo_os">
                         <OrdemServico />
+                      </ModuleRoute>
+                    }
+                  />
+
+                  <Route
+                    path="/crediario"
+                    element={
+                      <ModuleRoute modulo="modulo_crediario">
+                        <Crediario />
                       </ModuleRoute>
                     }
                   />
