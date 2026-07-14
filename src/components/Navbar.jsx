@@ -13,6 +13,7 @@ export default function Navbar() {
     { to: "/clientes", label: "Clientes", modulo: "modulo_clientes" },
     { to: "/relatorio", label: "Relatório", modulo: "modulo_relatorio" },
     { to: "/ordem-servico", label: "OS", modulo: "modulo_os" },
+    { to: "/crediario", label: "Crediário", modulo: "modulo_crediario" },
   ];
 
   const linksPermitidos = links.filter(
@@ -33,6 +34,7 @@ export default function Navbar() {
             <h1 className="text-lg font-black text-slate-900 group-hover:text-[#2AB7B0] transition">
               Smart Up
             </h1>
+
             <p className="text-xs font-medium text-slate-500">
               Cerro Azul • Gestão Inteligente
             </p>
@@ -61,6 +63,7 @@ export default function Navbar() {
           </nav>
 
           <button
+            type="button"
             onClick={logout}
             className="rounded-2xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100"
           >
@@ -89,6 +92,7 @@ export default function Navbar() {
         })}
 
         <button
+          type="button"
           onClick={logout}
           className="whitespace-nowrap rounded-2xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600"
         >
