@@ -1702,7 +1702,7 @@ export default function Crediario() {
           <meta charset="UTF-8" />
 
           <title>
-            Promissórias do crediário ${numeroCrediario}
+            Promissórias do crediário 
           </title>
 
           <style>
@@ -1710,107 +1710,53 @@ export default function Crediario() {
               box-sizing: border-box;
             }
 
-            @page {
-              size: A4;
-              margin: 10mm;
-            }
+            @page{
+    size:A4;
+    margin:10mm;
+}
 
-            body {
-              margin: 0;
-              padding: 20px;
-              font-family: Arial, Helvetica, sans-serif;
-              color: #0f172a;
-              background: white;
-            }
+body{
+    margin:0;
+    padding:0;
+    font-family:Arial,Helvetica,sans-serif;
+}
 
-            .promissoria {
-              width: 100%;
-              max-width: 900px;
-              min-height: 650px;
-              margin: 0 auto 28px;
-              overflow: hidden;
-              border: 2px solid #0C7886;
-              border-radius: 16px;
-              page-break-after: always;
-              break-after: page;
-            }
+.promissoria{
+    width:100%;
+    height:100mm;
+    border:2px solid #0C7886;
+    margin-bottom:4mm;
+    page-break-inside:avoid;
+    display:flex;
+    flex-direction:column;
+}
 
-            .promissoria:last-child {
-              page-break-after: auto;
-              break-after: auto;
-            }
+.promissoria:nth-child(3n){
+    page-break-after:always;
+}
 
-            .cabecalho {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              gap: 20px;
-              padding: 22px 26px;
-              background: #0C7886;
-              color: white;
-            }
+.cabecalho{
+    background:#0C7886;
+    color:white;
+    padding:8px 15px;
+}
 
-            .cabecalho h1 {
-              margin: 0;
-              font-size: 26px;
-            }
+.conteudo{
+    flex:1;
+    padding:12px 18px;
+}
 
-            .cabecalho p {
-              margin: 6px 0 0;
-              font-size: 14px;
-            }
+.assinatura{
+    margin-top:auto;
+    padding-top:12px;
+    text-align:center;
+}
 
-            .dados-parcela {
-              display: flex;
-              flex-direction: column;
-              gap: 6px;
-              text-align: right;
-              font-size: 14px;
-            }
-
-            .conteudo {
-              padding: 32px;
-            }
-
-            .valor {
-              display: inline-block;
-              margin-bottom: 24px;
-              padding: 12px 20px;
-              border: 2px solid #EE6D46;
-              border-radius: 12px;
-              color: #EE6D46;
-              font-size: 25px;
-              font-weight: bold;
-            }
-
-            .texto-principal {
-              font-size: 16px;
-              line-height: 1.8;
-            }
-
-            .dados-cliente {
-              margin-top: 28px;
-              padding: 20px;
-              border-radius: 12px;
-              background: #f8fafc;
-            }
-
-            .dados-cliente div {
-              margin-bottom: 10px;
-              font-size: 15px;
-            }
-
-            .assinatura {
-              margin-top: 90px;
-              text-align: center;
-            }
-
-            .linha-assinatura {
-              width: 440px;
-              max-width: 90%;
-              margin: 0 auto 8px;
-              border-top: 1px solid #0f172a;
-            }
+.linha-assinatura{
+    width:70%;
+    margin:auto;
+    border-top:1px solid black;
+}
 
             .rodape {
               margin-top: 38px;
