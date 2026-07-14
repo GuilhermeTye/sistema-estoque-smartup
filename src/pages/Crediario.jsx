@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
+
 import { supabase } from "../lib/supabase";
+import logoSmartUp from "../assets/logo.png";
 
 const FORMAS_PAGAMENTO = [
   "Dinheiro",
@@ -68,7 +71,7 @@ function adicionarMeses(dataISO, quantidade) {
   const ultimoDia = new Date(
     data.getFullYear(),
     data.getMonth() + 1,
-    0
+    0,
   ).getDate();
 
   data.setDate(Math.min(dia, ultimoDia));
@@ -103,7 +106,7 @@ function normalizarValor(valor) {
         texto
           .replace(/\./g, "")
           .replace(",", ".")
-          .replace(/[^\d.-]/g, "")
+          .replace(/[^\d.-]/g, ""),
       ) || 0
     );
   }
@@ -129,6 +132,22 @@ function obterEmpresaId() {
   }
 }
 
+function obterEmpresaSalva() {
+  const empresaSalva = localStorage.getItem("smartup_empresa");
+
+  if (!empresaSalva) return {};
+
+  try {
+    const empresa = JSON.parse(empresaSalva);
+
+    return typeof empresa === "object" && empresa !== null
+      ? empresa
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function obterNomeCliente(cliente) {
   return (
     cliente?.nome ||
@@ -136,6 +155,20 @@ function obterNomeCliente(cliente) {
     cliente?.cliente_nome ||
     "Cliente sem nome"
   );
+}
+
+function obterEnderecoCliente(cliente) {
+  return [
+    cliente?.endereco,
+    cliente?.numero,
+    cliente?.complemento,
+    cliente?.bairro,
+    cliente?.cidade,
+    cliente?.estado,
+    cliente?.cep,
+  ]
+    .filter(Boolean)
+    .join(" - ");
 }
 
 function calcularSaldoParcela(parcela) {
@@ -147,8 +180,186 @@ function calcularSaldoParcela(parcela) {
 
   return Math.max(
     0,
-    valorParcela + juros + multa - desconto - valorPago
+    valorParcela + juros + multa - desconto - valorPago,
   );
+}
+
+function calcularValorTotalParcela(parcela) {
+  return Math.max(
+    0,
+    Number(parcela?.valor_parcela || 0) +
+      Number(parcela?.valor_juros || 0) +
+      Number(parcela?.valor_multa || 0) -
+      Number(parcela?.valor_desconto || 0),
+  );
+}
+
+function escaparHTML(valor) {
+  return String(valor ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function numeroPorExtenso(valor) {
+  const unidades = [
+    "",
+    "um",
+    "dois",
+    "três",
+    "quatro",
+    "cinco",
+    "seis",
+    "sete",
+    "oito",
+    "nove",
+  ];
+
+  const especiais = [
+    "dez",
+    "onze",
+    "doze",
+    "treze",
+    "quatorze",
+    "quinze",
+    "dezesseis",
+    "dezessete",
+    "dezoito",
+    "dezenove",
+  ];
+
+  const dezenas = [
+    "",
+    "",
+    "vinte",
+    "trinta",
+    "quarenta",
+    "cinquenta",
+    "sessenta",
+    "setenta",
+    "oitenta",
+    "noventa",
+  ];
+
+  const centenas = [
+    "",
+    "cento",
+    "duzentos",
+    "trezentos",
+    "quatrocentos",
+    "quinhentos",
+    "seiscentos",
+    "setecentos",
+    "oitocentos",
+    "novecentos",
+  ];
+
+  function ate999(numero) {
+    const n = Math.floor(numero);
+
+    if (n === 0) return "";
+    if (n === 100) return "cem";
+
+    const partes = [];
+
+    const centena = Math.floor(n / 100);
+    const restoCentena = n % 100;
+
+    if (centena > 0) {
+      partes.push(centenas[centena]);
+    }
+
+    if (restoCentena > 0) {
+      if (restoCentena < 10) {
+        partes.push(unidades[restoCentena]);
+      } else if (restoCentena < 20) {
+        partes.push(especiais[restoCentena - 10]);
+      } else {
+        const dezena = Math.floor(restoCentena / 10);
+        const unidade = restoCentena % 10;
+
+        partes.push(dezenas[dezena]);
+
+        if (unidade > 0) {
+          partes.push(unidades[unidade]);
+        }
+      }
+    }
+
+    return partes.join(" e ");
+  }
+
+  function inteiroPorExtenso(numero) {
+    const n = Math.floor(numero);
+
+    if (n === 0) return "zero";
+
+    const partes = [];
+
+    const milhoes = Math.floor(n / 1_000_000);
+    const milhares = Math.floor((n % 1_000_000) / 1_000);
+    const centenasRestantes = n % 1_000;
+
+    if (milhoes > 0) {
+      partes.push(
+        milhoes === 1
+          ? "um milhão"
+          : `${ate999(milhoes)} milhões`,
+      );
+    }
+
+    if (milhares > 0) {
+      partes.push(
+        milhares === 1
+          ? "mil"
+          : `${ate999(milhares)} mil`,
+      );
+    }
+
+    if (centenasRestantes > 0) {
+      partes.push(ate999(centenasRestantes));
+    }
+
+    return partes.join(" e ");
+  }
+
+  const valorNormalizado = Math.max(0, Number(valor || 0));
+  const reais = Math.floor(valorNormalizado);
+
+  let centavos = Math.round((valorNormalizado - reais) * 100);
+
+  let reaisCorrigidos = reais;
+
+  if (centavos === 100) {
+    reaisCorrigidos += 1;
+    centavos = 0;
+  }
+
+  const partes = [];
+
+  if (reaisCorrigidos > 0) {
+    partes.push(
+      `${inteiroPorExtenso(reaisCorrigidos)} ${
+        reaisCorrigidos === 1 ? "real" : "reais"
+      }`,
+    );
+  }
+
+  if (centavos > 0) {
+    partes.push(
+      `${inteiroPorExtenso(centavos)} ${
+        centavos === 1 ? "centavo" : "centavos"
+      }`,
+    );
+  }
+
+  if (partes.length === 0) {
+    return "zero real";
+  }
+
+  return partes.join(" e ");
 }
 
 function classeStatus(status) {
@@ -227,6 +438,8 @@ function Modal({
 export default function Crediario() {
   const empresaId = useMemo(() => obterEmpresaId(), []);
 
+  const empresa = useMemo(() => obterEmpresaSalva(), []);
+
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [recebendo, setRecebendo] = useState(false);
@@ -288,7 +501,7 @@ export default function Crediario() {
   const valorEntrada = useMemo(() => {
     return Math.max(
       0,
-      normalizarValor(parcelamento.valorEntrada)
+      normalizarValor(parcelamento.valorEntrada),
     );
   }, [parcelamento.valorEntrada]);
 
@@ -299,12 +512,13 @@ export default function Crediario() {
   const parcelasPrevias = useMemo(() => {
     const quantidade = Math.max(
       1,
-      Number(parcelamento.quantidadeParcelas || 1)
+      Number(parcelamento.quantidadeParcelas || 1),
     );
 
     const totalCentavos = Math.round(valorFinanciado * 100);
+
     const valorBaseCentavos = Math.floor(
-      totalCentavos / quantidade
+      totalCentavos / quantidade,
     );
 
     const diferencaCentavos =
@@ -322,10 +536,10 @@ export default function Crediario() {
             (valorBaseCentavos + adicional) / 100,
           data_vencimento: adicionarMeses(
             parcelamento.primeiroVencimento,
-            indice
+            indice,
           ),
         };
-      }
+      },
     );
   }, [
     valorFinanciado,
@@ -363,11 +577,11 @@ export default function Crediario() {
         if (!termo) return true;
 
         const nome = String(
-          produto?.nome || ""
+          produto?.nome || "",
         ).toLowerCase();
 
         const codigo = String(
-          produto?.codigo || ""
+          produto?.codigo || "",
         ).toLowerCase();
 
         return nome.includes(termo) || codigo.includes(termo);
@@ -448,7 +662,7 @@ export default function Crediario() {
       console.error("Erro ao carregar clientes:", error);
 
       throw new Error(
-        `Não foi possível carregar os clientes: ${error.message}`
+        `Não foi possível carregar os clientes: ${error.message}`,
       );
     }
 
@@ -468,7 +682,7 @@ export default function Crediario() {
       console.error("Erro ao carregar produtos:", error);
 
       throw new Error(
-        `Não foi possível carregar os produtos: ${error.message}`
+        `Não foi possível carregar os produtos: ${error.message}`,
       );
     }
 
@@ -490,11 +704,11 @@ export default function Crediario() {
     if (erroCrediarios) {
       console.error(
         "Erro ao carregar crediários:",
-        erroCrediarios
+        erroCrediarios,
       );
 
       throw new Error(
-        `Não foi possível carregar os crediários: ${erroCrediarios.message}`
+        `Não foi possível carregar os crediários: ${erroCrediarios.message}`,
       );
     }
 
@@ -507,12 +721,12 @@ export default function Crediario() {
       ...new Set(
         dadosCrediarios
           .map((crediario) => crediario.cliente_id)
-          .filter(Boolean)
+          .filter(Boolean),
       ),
     ];
 
     const crediariosIds = dadosCrediarios.map(
-      (crediario) => crediario.id
+      (crediario) => crediario.id,
     );
 
     let dadosClientes = [];
@@ -527,7 +741,7 @@ export default function Crediario() {
 
       if (error) {
         throw new Error(
-          `Não foi possível carregar os clientes dos crediários: ${error.message}`
+          `Não foi possível carregar os clientes dos crediários: ${error.message}`,
         );
       }
 
@@ -544,7 +758,7 @@ export default function Crediario() {
 
       if (error) {
         throw new Error(
-          `Não foi possível carregar as parcelas: ${error.message}`
+          `Não foi possível carregar as parcelas: ${error.message}`,
         );
       }
 
@@ -565,7 +779,7 @@ export default function Crediario() {
       }
 
       parcelasPorCrediario[parcela.crediario_id].push(
-        parcela
+        parcela,
       );
     });
 
@@ -585,9 +799,9 @@ export default function Crediario() {
         ).sort(
           (a, b) =>
             Number(a.numero_parcela) -
-            Number(b.numero_parcela)
+            Number(b.numero_parcela),
         ),
-      })
+      }),
     );
 
     setCrediarios(registrosMontados);
@@ -609,7 +823,7 @@ export default function Crediario() {
       if (error) {
         console.warn(
           "Não foi possível atualizar parcelas atrasadas:",
-          error
+          error,
         );
       }
     }, [empresaId]);
@@ -635,7 +849,7 @@ export default function Crediario() {
 
       alert(
         error?.message ||
-          "Não foi possível carregar o módulo de crediário."
+          "Não foi possível carregar o módulo de crediário.",
       );
     } finally {
       setLoading(false);
@@ -680,13 +894,13 @@ export default function Crediario() {
 
   function adicionarProduto(produto) {
     const existente = itens.find(
-      (item) => item.produto_id === produto.id
+      (item) => item.produto_id === produto.id,
     );
 
     if (existente) {
       alterarQuantidade(
         produto.id,
-        Number(existente.quantidade) + 1
+        Number(existente.quantidade) + 1,
       );
 
       return;
@@ -707,11 +921,11 @@ export default function Crediario() {
 
   function alterarQuantidade(
     produtoId,
-    quantidadeInformada
+    quantidadeInformada,
   ) {
     const quantidade = Math.max(
       1,
-      Number(quantidadeInformada || 1)
+      Number(quantidadeInformada || 1),
     );
 
     setItens((anteriores) =>
@@ -722,7 +936,7 @@ export default function Crediario() {
 
         if (quantidade > Number(item.estoque || 0)) {
           alert(
-            `O estoque disponível de ${item.nome} é ${item.estoque}.`
+            `O estoque disponível de ${item.nome} é ${item.estoque}.`,
           );
 
           return item;
@@ -732,7 +946,7 @@ export default function Crediario() {
           ...item,
           quantidade,
         };
-      })
+      }),
     );
   }
 
@@ -746,16 +960,16 @@ export default function Crediario() {
               ...item,
               preco,
             }
-          : item
-      )
+          : item,
+      ),
     );
   }
 
   function removerProduto(produtoId) {
     setItens((anteriores) =>
       anteriores.filter(
-        (item) => item.produto_id !== produtoId
-      )
+        (item) => item.produto_id !== produtoId,
+      ),
     );
   }
 
@@ -770,7 +984,7 @@ export default function Crediario() {
 
       if (error || !data) {
         throw new Error(
-          `Não foi possível verificar o estoque de ${item.nome}.`
+          `Não foi possível verificar o estoque de ${item.nome}.`,
         );
       }
 
@@ -779,7 +993,7 @@ export default function Crediario() {
         Number(item.quantidade || 0)
       ) {
         throw new Error(
-          `Estoque insuficiente para ${data.nome}. Disponível: ${data.estoque}.`
+          `Estoque insuficiente para ${data.nome}. Disponível: ${data.estoque}.`,
         );
       }
     }
@@ -796,7 +1010,7 @@ export default function Crediario() {
 
       if (error || !data) {
         throw new Error(
-          `Não foi possível consultar o estoque de ${item.nome}.`
+          `Não foi possível consultar o estoque de ${item.nome}.`,
         );
       }
 
@@ -806,7 +1020,7 @@ export default function Crediario() {
 
       if (novoEstoque < 0) {
         throw new Error(
-          `Estoque insuficiente para ${item.nome}.`
+          `Estoque insuficiente para ${item.nome}.`,
         );
       }
 
@@ -820,7 +1034,7 @@ export default function Crediario() {
 
       if (erroAtualizacao) {
         throw new Error(
-          `Não foi possível baixar o estoque de ${item.nome}.`
+          `Não foi possível baixar o estoque de ${item.nome}.`,
         );
       }
     }
@@ -850,7 +1064,7 @@ export default function Crediario() {
       } catch (error) {
         console.error(
           "Erro ao devolver estoque:",
-          error
+          error,
         );
       }
     }
@@ -879,20 +1093,20 @@ export default function Crediario() {
 
     if (valorEntrada > totalVenda) {
       alert(
-        "O valor da entrada não pode ser maior que o total da venda."
+        "O valor da entrada não pode ser maior que o total da venda.",
       );
       return;
     }
 
     if (valorFinanciado <= 0) {
       alert(
-        "O valor financiado precisa ser maior que zero."
+        "O valor financiado precisa ser maior que zero.",
       );
       return;
     }
 
     const quantidadeParcelas = Number(
-      parcelamento.quantidadeParcelas || 0
+      parcelamento.quantidadeParcelas || 0,
     );
 
     if (
@@ -900,7 +1114,7 @@ export default function Crediario() {
       quantidadeParcelas > 120
     ) {
       alert(
-        "Informe uma quantidade de parcelas entre 1 e 120."
+        "Informe uma quantidade de parcelas entre 1 e 120.",
       );
       return;
     }
@@ -945,7 +1159,7 @@ export default function Crediario() {
           valor_total: Number(totalVenda.toFixed(2)),
           valor_entrada: Number(valorEntrada.toFixed(2)),
           valor_financiado: Number(
-            valorFinanciado.toFixed(2)
+            valorFinanciado.toFixed(2),
           ),
           quantidade_parcelas: quantidadeParcelas,
           data_primeiro_vencimento:
@@ -959,7 +1173,7 @@ export default function Crediario() {
 
       if (error) {
         throw new Error(
-          `Erro ao criar crediário: ${error.message}`
+          `Erro ao criar crediário: ${error.message}`,
         );
       }
 
@@ -972,7 +1186,7 @@ export default function Crediario() {
           cliente_id: clienteSelecionado.id,
           numero_parcela: parcela.numero_parcela,
           valor_parcela: Number(
-            parcela.valor_parcela.toFixed(2)
+            parcela.valor_parcela.toFixed(2),
           ),
           valor_pago: 0,
           valor_desconto: 0,
@@ -980,7 +1194,7 @@ export default function Crediario() {
           valor_multa: 0,
           data_vencimento: parcela.data_vencimento,
           status: "PENDENTE",
-        })
+        }),
       );
 
       const { error: erroParcelas } = await supabase
@@ -989,7 +1203,7 @@ export default function Crediario() {
 
       if (erroParcelas) {
         throw new Error(
-          `Erro ao gerar parcelas: ${erroParcelas.message}`
+          `Erro ao gerar parcelas: ${erroParcelas.message}`,
         );
       }
 
@@ -997,7 +1211,7 @@ export default function Crediario() {
       estoqueBaixado = true;
 
       alert(
-        "Venda no crediário cadastrada com sucesso."
+        "Venda no crediário cadastrada com sucesso.",
       );
 
       setModalNovaVenda(false);
@@ -1010,7 +1224,7 @@ export default function Crediario() {
     } catch (error) {
       console.error(
         "Erro ao finalizar crediário:",
-        error
+        error,
       );
 
       if (estoqueBaixado) {
@@ -1027,7 +1241,7 @@ export default function Crediario() {
 
       alert(
         error?.message ||
-          "Não foi possível cadastrar o crediário."
+          "Não foi possível cadastrar o crediário.",
       );
     } finally {
       setSalvando(false);
@@ -1047,7 +1261,7 @@ export default function Crediario() {
 
       if (error) {
         throw new Error(
-          `Não foi possível carregar as parcelas: ${error.message}`
+          `Não foi possível carregar as parcelas: ${error.message}`,
         );
       }
 
@@ -1089,12 +1303,12 @@ export default function Crediario() {
       data.every((parcela) => parcela.status === "PAGA");
 
     const existeAtrasada = data.some(
-      (parcela) => parcela.status === "ATRASADA"
+      (parcela) => parcela.status === "ATRASADA",
     );
 
     const existePagamento = data.some(
       (parcela) =>
-        Number(parcela.valor_pago || 0) > 0
+        Number(parcela.valor_pago || 0) > 0,
     );
 
     let novoStatus = "ABERTO";
@@ -1125,22 +1339,22 @@ export default function Crediario() {
     }
 
     const valorRecebido = normalizarValor(
-      recebimento.valor
+      recebimento.valor,
     );
 
     const desconto = normalizarValor(
-      recebimento.desconto
+      recebimento.desconto,
     );
 
     const juros = normalizarValor(recebimento.juros);
     const multa = normalizarValor(recebimento.multa);
 
     const valorParcela = Number(
-      parcelaRecebimento.valor_parcela || 0
+      parcelaRecebimento.valor_parcela || 0,
     );
 
     const valorJaPago = Number(
-      parcelaRecebimento.valor_pago || 0
+      parcelaRecebimento.valor_pago || 0,
     );
 
     const totalAtualizado =
@@ -1148,12 +1362,12 @@ export default function Crediario() {
 
     const saldoAtualizado = Math.max(
       0,
-      totalAtualizado - valorJaPago
+      totalAtualizado - valorJaPago,
     );
 
     if (valorRecebido <= 0) {
       alert(
-        "Informe um valor de pagamento maior que zero."
+        "Informe um valor de pagamento maior que zero.",
       );
       return;
     }
@@ -1161,8 +1375,8 @@ export default function Crediario() {
     if (valorRecebido > saldoAtualizado + 0.01) {
       alert(
         `O pagamento não pode ser maior que ${moeda(
-          saldoAtualizado
-        )}.`
+          saldoAtualizado,
+        )}.`,
       );
       return;
     }
@@ -1175,7 +1389,7 @@ export default function Crediario() {
       } = await supabase.auth.getUser();
 
       const novoValorPago = Number(
-        (valorJaPago + valorRecebido).toFixed(2)
+        (valorJaPago + valorRecebido).toFixed(2),
       );
 
       const parcelaQuitada =
@@ -1200,7 +1414,7 @@ export default function Crediario() {
 
       if (erroPagamento) {
         throw new Error(
-          `Erro ao registrar pagamento: ${erroPagamento.message}`
+          `Erro ao registrar pagamento: ${erroPagamento.message}`,
         );
       }
 
@@ -1209,7 +1423,7 @@ export default function Crediario() {
         .update({
           valor_pago: novoValorPago,
           valor_desconto: Number(
-            desconto.toFixed(2)
+            desconto.toFixed(2),
           ),
           valor_juros: Number(juros.toFixed(2)),
           valor_multa: Number(multa.toFixed(2)),
@@ -1229,12 +1443,12 @@ export default function Crediario() {
 
       if (erroParcela) {
         throw new Error(
-          `Erro ao atualizar parcela: ${erroParcela.message}`
+          `Erro ao atualizar parcela: ${erroParcela.message}`,
         );
       }
 
       await atualizarStatusCrediario(
-        crediarioSelecionado.id
+        crediarioSelecionado.id,
       );
 
       const { data: parcelasAtualizadas } =
@@ -1244,14 +1458,14 @@ export default function Crediario() {
           .eq("empresa_id", empresaId)
           .eq(
             "crediario_id",
-            crediarioSelecionado.id
+            crediarioSelecionado.id,
           )
           .order("numero_parcela", {
             ascending: true,
           });
 
       setParcelasSelecionadas(
-        parcelasAtualizadas || []
+        parcelasAtualizadas || [],
       );
 
       setModalRecebimento(false);
@@ -1265,7 +1479,7 @@ export default function Crediario() {
 
       alert(
         error?.message ||
-          "Não foi possível registrar o pagamento."
+          "Não foi possível registrar o pagamento.",
       );
     } finally {
       setRecebendo(false);
@@ -1286,263 +1500,732 @@ export default function Crediario() {
     }
   }
 
-  function imprimirPromissoria(crediario, parcela) {
-    if (!crediario || !parcela) return;
+  async function criarQRCodeCrediario(
+    crediario,
+    parcela,
+  ) {
+    const codigo = [
+      "SMARTUP",
+      `CREDIARIO:${crediario.id}`,
+      `PARCELA:${parcela.id}`,
+      `NUMERO:${parcela.numero_parcela}`,
+      `VENCIMENTO:${parcela.data_vencimento}`,
+      `VALOR:${calcularValorTotalParcela(parcela).toFixed(
+        2,
+      )}`,
+    ].join("|");
 
-    const cliente = crediario?.cliente || {};
-
-    const numeroCrediario =
-      crediario.numero_crediario ||
-      String(crediario.id).slice(0, 8).toUpperCase();
-
-    const valor =
-      Number(parcela.valor_parcela || 0) +
-      Number(parcela.valor_juros || 0) +
-      Number(parcela.valor_multa || 0) -
-      Number(parcela.valor_desconto || 0);
-
-    const endereco = [
-      cliente.endereco,
-      cliente.numero,
-      cliente.bairro,
-      cliente.cidade,
-      cliente.estado,
-    ]
-      .filter(Boolean)
-      .join(" - ");
-
-    const janela = window.open(
-      "",
-      "_blank",
-      "width=900,height=700"
-    );
-
-    if (!janela) {
-      alert(
-        "Autorize os pop-ups do navegador para imprimir."
-      );
-      return;
-    }
-
-    janela.document.write(`
-      <!DOCTYPE html>
-      <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8" />
-
-          <title>
-            Promissória ${numeroCrediario} -
-            Parcela ${parcela.numero_parcela}
-          </title>
-
-          <style>
-            * {
-              box-sizing: border-box;
-            }
-
-            body {
-              margin: 0;
-              padding: 30px;
-              font-family: Arial, Helvetica, sans-serif;
-              color: #0f172a;
-              background: white;
-            }
-
-            .promissoria {
-              max-width: 850px;
-              margin: 0 auto;
-              overflow: hidden;
-              border: 2px solid #0C7886;
-              border-radius: 16px;
-            }
-
-            .cabecalho {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              gap: 20px;
-              padding: 22px 26px;
-              background: #0C7886;
-              color: white;
-            }
-
-            .cabecalho h1 {
-              margin: 0;
-              font-size: 26px;
-            }
-
-            .dados-parcela {
-              text-align: right;
-              line-height: 1.6;
-            }
-
-            .conteudo {
-              padding: 30px;
-            }
-
-            .valor {
-              display: inline-block;
-              margin-bottom: 25px;
-              padding: 12px 20px;
-              border: 2px solid #EE6D46;
-              border-radius: 12px;
-              color: #EE6D46;
-              font-size: 24px;
-              font-weight: bold;
-            }
-
-            .texto {
-              font-size: 16px;
-              line-height: 1.8;
-            }
-
-            .dados-cliente {
-              margin-top: 25px;
-              padding: 20px;
-              border-radius: 12px;
-              background: #f8fafc;
-            }
-
-            .dados-cliente div {
-              margin-bottom: 9px;
-            }
-
-            .assinatura {
-              margin-top: 80px;
-              text-align: center;
-            }
-
-            .linha {
-              width: 440px;
-              max-width: 90%;
-              margin: 0 auto 8px;
-              border-top: 1px solid #0f172a;
-            }
-
-            .rodape {
-              margin-top: 35px;
-              text-align: center;
-              color: #64748b;
-              font-size: 12px;
-            }
-
-            @media print {
-              body {
-                padding: 0;
-              }
-
-              .promissoria {
-                border-radius: 0;
-              }
-            }
-          </style>
-        </head>
-
-        <body>
-          <section class="promissoria">
-            <div class="cabecalho">
-              <div>
-                <h1>NOTA PROMISSÓRIA</h1>
-                <div>Crediário nº ${numeroCrediario}</div>
-              </div>
-
-              <div class="dados-parcela">
-                <strong>
-                  Parcela ${parcela.numero_parcela} de ${
-      crediario.quantidade_parcelas
-    }
-                </strong>
-
-                <div>
-                  Vencimento:
-                  ${dataBrasil(parcela.data_vencimento)}
-                </div>
-              </div>
-            </div>
-
-            <div class="conteudo">
-              <div class="valor">
-                ${moeda(valor)}
-              </div>
-
-              <p class="texto">
-                No vencimento desta nota promissória, em
-                <strong>
-                  ${dataBrasil(parcela.data_vencimento)}
-                </strong>,
-                pagarei por esta única via a quantia de
-                <strong>${moeda(valor)}</strong>,
-                referente à parcela
-                <strong>${parcela.numero_parcela}</strong>
-                do crediário nº
-                <strong>${numeroCrediario}</strong>.
-              </p>
-
-              <div class="dados-cliente">
-                <div>
-                  <strong>Cliente:</strong>
-                  ${obterNomeCliente(cliente)}
-                </div>
-
-                <div>
-                  <strong>CPF:</strong>
-                  ${cliente.cpf || "-"}
-                </div>
-
-                <div>
-                  <strong>Telefone:</strong>
-                  ${cliente.telefone || "-"}
-                </div>
-
-                <div>
-                  <strong>Endereço:</strong>
-                  ${endereco || "-"}
-                </div>
-
-                <div>
-                  <strong>Data da venda:</strong>
-                  ${dataBrasil(crediario.criado_em)}
-                </div>
-
-                <div>
-                  <strong>Vencimento:</strong>
-                  ${dataBrasil(parcela.data_vencimento)}
-                </div>
-              </div>
-
-              <div class="assinatura">
-                <div class="linha"></div>
-
-                <strong>
-                  ${obterNomeCliente(cliente)}
-                </strong>
-
-                <div>
-                  CPF: ${cliente.cpf || "-"}
-                </div>
-              </div>
-
-              <div class="rodape">
-                Documento gerado pelo sistema Smart UP.
-              </div>
-            </div>
-          </section>
-
-          <script>
-            window.onload = function () {
-              window.print();
-            };
-          </script>
-        </body>
-      </html>
-    `);
-
-    janela.document.close();
+    return QRCode.toDataURL(codigo, {
+      width: 220,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: {
+        dark: "#0f172a",
+        light: "#ffffff",
+      },
+    });
   }
 
-  function imprimirTodasPromissorias(
+  function obterDadosEmpresa() {
+    return {
+      nome:
+        empresa?.nome_fantasia ||
+        empresa?.nome ||
+        empresa?.razao_social ||
+        "Smart UP",
+
+      cnpj:
+        empresa?.cnpj ||
+        empresa?.cpf_cnpj ||
+        "",
+
+      telefone:
+        empresa?.telefone ||
+        empresa?.whatsapp ||
+        "",
+
+      endereco: [
+        empresa?.endereco,
+        empresa?.numero,
+        empresa?.bairro,
+        empresa?.cidade,
+        empresa?.estado,
+      ]
+        .filter(Boolean)
+        .join(" - "),
+    };
+  }
+
+  function obterCodigoCrediario(crediario) {
+    return (
+      crediario.numero_crediario ||
+      String(crediario.id).slice(0, 8).toUpperCase()
+    );
+  }
+
+  function criarHTMLPromissoria({
     crediario,
-    parcelas
+    parcela,
+    qrCode,
+    modoIndividual = false,
+  }) {
+    const cliente = crediario?.cliente || {};
+    const empresaImpressao = obterDadosEmpresa();
+
+    const numeroCrediario =
+      obterCodigoCrediario(crediario);
+
+    const codigoConsulta = `${numeroCrediario}-${String(
+      parcela.numero_parcela,
+    ).padStart(2, "0")}`;
+
+    const valor = calcularValorTotalParcela(parcela);
+
+    const valorExtenso = numeroPorExtenso(valor);
+
+    const enderecoCliente =
+      obterEnderecoCliente(cliente);
+
+    const cidadeAssinatura =
+      cliente?.cidade ||
+      empresa?.cidade ||
+      "Cerro Azul";
+
+    return `
+      <section class="${
+        modoIndividual
+          ? "promissoria promissoria-individual"
+          : "promissoria"
+      }">
+        <div class="linha-corte">
+          <span>✂</span>
+          <span>CORTE AQUI</span>
+        </div>
+
+        <div class="promissoria-corpo">
+          <header class="cabecalho-promissoria">
+            <div class="marca">
+              <div class="logo-container">
+                <img
+                  src="${escaparHTML(logoSmartUp)}"
+                  alt="Smart UP"
+                />
+              </div>
+
+              <div class="empresa-dados">
+                <h1>
+                  ${escaparHTML(empresaImpressao.nome)}
+                </h1>
+
+                ${
+                  empresaImpressao.cnpj
+                    ? `
+                      <p>
+                        CNPJ: ${escaparHTML(
+                          empresaImpressao.cnpj,
+                        )}
+                      </p>
+                    `
+                    : ""
+                }
+
+                ${
+                  empresaImpressao.telefone
+                    ? `
+                      <p>
+                        Telefone: ${escaparHTML(
+                          empresaImpressao.telefone,
+                        )}
+                      </p>
+                    `
+                    : ""
+                }
+              </div>
+            </div>
+
+            <div class="titulo-promissoria">
+              <strong>NOTA PROMISSÓRIA</strong>
+
+              <span>
+                Nº ${escaparHTML(codigoConsulta)}
+              </span>
+            </div>
+
+            <div class="parcela-valor">
+              <span>
+                Parcela ${parcela.numero_parcela}/${
+                  crediario.quantidade_parcelas
+                }
+              </span>
+
+              <strong>${moeda(valor)}</strong>
+            </div>
+          </header>
+
+          <div class="conteudo-promissoria">
+            <div class="coluna-principal">
+              <div class="vencimento-destaque">
+                <span>VENCIMENTO</span>
+
+                <strong>
+                  ${dataBrasil(parcela.data_vencimento)}
+                </strong>
+              </div>
+
+              <p class="texto-legal">
+                No vencimento indicado, pagarei por esta
+                única via a
+                <strong>
+                  ${escaparHTML(empresaImpressao.nome)}
+                </strong>
+                ou à sua ordem, a quantia de
+                <strong>${moeda(valor)}</strong>
+                (
+                <strong class="extenso">
+                  ${escaparHTML(valorExtenso)}
+                </strong>
+                ), referente à parcela
+                <strong>
+                  ${parcela.numero_parcela} de
+                  ${crediario.quantidade_parcelas}
+                </strong>
+                da venda realizada no crediário nº
+                <strong>
+                  ${escaparHTML(numeroCrediario)}
+                </strong>.
+              </p>
+
+              <div class="grade-dados">
+                <div class="campo campo-grande">
+                  <span>CLIENTE / EMITENTE</span>
+
+                  <strong>
+                    ${escaparHTML(
+                      obterNomeCliente(cliente),
+                    )}
+                  </strong>
+                </div>
+
+                <div class="campo">
+                  <span>CPF</span>
+
+                  <strong>
+                    ${escaparHTML(cliente?.cpf || "-")}
+                  </strong>
+                </div>
+
+                <div class="campo">
+                  <span>TELEFONE</span>
+
+                  <strong>
+                    ${escaparHTML(
+                      cliente?.telefone || "-",
+                    )}
+                  </strong>
+                </div>
+
+                <div class="campo campo-grande">
+                  <span>ENDEREÇO</span>
+
+                  <strong>
+                    ${escaparHTML(
+                      enderecoCliente || "-",
+                    )}
+                  </strong>
+                </div>
+
+                <div class="campo">
+                  <span>DATA DE EMISSÃO</span>
+
+                  <strong>
+                    ${dataBrasil(crediario.criado_em)}
+                  </strong>
+                </div>
+
+                <div class="campo">
+                  <span>CÓDIGO DE CONSULTA</span>
+
+                  <strong>
+                    ${escaparHTML(codigoConsulta)}
+                  </strong>
+                </div>
+              </div>
+
+              <div class="assinatura-area">
+                <div class="local-data">
+                  ${escaparHTML(cidadeAssinatura)},
+                  ______ de __________________ de ______.
+                </div>
+
+                <div class="assinatura-linha"></div>
+
+                <div class="assinatura-texto">
+                  Assinatura do cliente/emissor
+                </div>
+              </div>
+            </div>
+
+            <aside class="coluna-qr">
+              <img
+                src="${qrCode}"
+                alt="QR Code do crediário"
+              />
+
+              <strong>Consulta interna</strong>
+
+              <span>
+                ${escaparHTML(codigoConsulta)}
+              </span>
+
+              <small>
+                QR Code para localização desta parcela no
+                sistema Smart UP.
+              </small>
+            </aside>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function criarCSSImpressao() {
+    return `
+      * {
+        box-sizing: border-box;
+      }
+
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+
+      html,
+      body {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #0f172a;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      body {
+        overflow: visible;
+      }
+
+      .promissoria {
+        position: relative;
+        width: 210mm;
+        height: 99mm;
+        min-height: 99mm;
+        max-height: 99mm;
+        margin: 0;
+        padding: 3mm 5mm 2.5mm;
+        overflow: hidden;
+        background: #ffffff;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      .promissoria:nth-of-type(3n) {
+        page-break-after: always;
+        break-after: page;
+      }
+
+      .promissoria:last-of-type {
+        page-break-after: auto;
+        break-after: auto;
+      }
+
+      .promissoria-individual {
+        margin-top: 0;
+        page-break-after: auto;
+        break-after: auto;
+      }
+
+      .linha-corte {
+        position: absolute;
+        top: 0;
+        left: 4mm;
+        right: 4mm;
+        display: flex;
+        align-items: center;
+        gap: 2mm;
+        height: 3mm;
+        border-top: 0.35mm dashed #94a3b8;
+        color: #64748b;
+        font-size: 5.5pt;
+        letter-spacing: 0.5px;
+      }
+
+      .linha-corte span:first-child {
+        margin-top: -1.8mm;
+        padding-right: 1mm;
+        background: #ffffff;
+        font-size: 8pt;
+      }
+
+      .linha-corte span:last-child {
+        margin-top: -1.4mm;
+        padding: 0 1mm;
+        background: #ffffff;
+      }
+
+      .promissoria-corpo {
+        height: 91.5mm;
+        overflow: hidden;
+        border: 0.55mm solid #0C7886;
+        border-radius: 2.5mm;
+        background: #ffffff;
+      }
+
+      .cabecalho-promissoria {
+        display: grid;
+        grid-template-columns: 1.35fr 0.8fr 0.7fr;
+        align-items: center;
+        min-height: 18mm;
+        padding: 2.2mm 3mm;
+        background: linear-gradient(
+          90deg,
+          #0C7886,
+          #27B9B3
+        );
+        color: #ffffff;
+      }
+
+      .marca {
+        display: flex;
+        align-items: center;
+        gap: 2.5mm;
+        min-width: 0;
+      }
+
+      .logo-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 13mm;
+        height: 13mm;
+        flex-shrink: 0;
+        padding: 0.8mm;
+        overflow: hidden;
+        border-radius: 2.5mm;
+        background: #ffffff;
+      }
+
+      .logo-container img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .empresa-dados {
+        min-width: 0;
+      }
+
+      .empresa-dados h1 {
+        max-width: 70mm;
+        margin: 0 0 0.6mm;
+        overflow: hidden;
+        color: #ffffff;
+        font-size: 10.5pt;
+        line-height: 1.05;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .empresa-dados p {
+        margin: 0.25mm 0;
+        font-size: 6.5pt;
+        line-height: 1.15;
+      }
+
+      .titulo-promissoria {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border-right: 0.3mm solid rgba(255, 255, 255, 0.35);
+        border-left: 0.3mm solid rgba(255, 255, 255, 0.35);
+        text-align: center;
+      }
+
+      .titulo-promissoria strong {
+        font-size: 10.5pt;
+        letter-spacing: 0.5px;
+      }
+
+      .titulo-promissoria span {
+        margin-top: 1mm;
+        font-size: 7pt;
+      }
+
+      .parcela-valor {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        justify-content: center;
+      }
+
+      .parcela-valor span {
+        margin-bottom: 0.8mm;
+        font-size: 7pt;
+      }
+
+      .parcela-valor strong {
+        font-size: 13pt;
+        line-height: 1;
+      }
+
+      .conteudo-promissoria {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 29mm;
+        gap: 3mm;
+        height: calc(100% - 18mm);
+        padding: 2.5mm 3mm;
+      }
+
+      .coluna-principal {
+        min-width: 0;
+      }
+
+      .vencimento-destaque {
+        display: inline-flex;
+        align-items: center;
+        gap: 2.5mm;
+        height: 8mm;
+        padding: 1mm 2.5mm;
+        border: 0.35mm solid #EE6D46;
+        border-radius: 1.5mm;
+        color: #c2410c;
+        background: #fff7ed;
+      }
+
+      .vencimento-destaque span {
+        font-size: 6.5pt;
+        font-weight: 700;
+      }
+
+      .vencimento-destaque strong {
+        font-size: 10.5pt;
+      }
+
+      .texto-legal {
+        margin: 1.5mm 0;
+        font-size: 7.1pt;
+        line-height: 1.32;
+        text-align: justify;
+      }
+
+      .texto-legal .extenso {
+        text-transform: uppercase;
+      }
+
+      .grade-dados {
+        display: grid;
+        grid-template-columns: 1.35fr 0.7fr 0.75fr;
+        gap: 1.2mm;
+      }
+
+      .campo {
+        min-width: 0;
+        min-height: 8.3mm;
+        padding: 1mm 1.5mm;
+        overflow: hidden;
+        border: 0.25mm solid #cbd5e1;
+        border-radius: 1mm;
+        background: #f8fafc;
+      }
+
+      .campo-grande {
+        grid-column: span 1;
+      }
+
+      .campo span {
+        display: block;
+        margin-bottom: 0.5mm;
+        color: #64748b;
+        font-size: 5.5pt;
+        font-weight: 700;
+      }
+
+      .campo strong {
+        display: block;
+        overflow: hidden;
+        color: #0f172a;
+        font-size: 6.8pt;
+        line-height: 1.1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .assinatura-area {
+        display: grid;
+        grid-template-columns: 1fr 58mm;
+        align-items: end;
+        gap: 5mm;
+        margin-top: 2.2mm;
+      }
+
+      .local-data {
+        color: #334155;
+        font-size: 6.5pt;
+      }
+
+      .assinatura-linha {
+        height: 5mm;
+        border-bottom: 0.3mm solid #0f172a;
+      }
+
+      .assinatura-texto {
+        grid-column: 2;
+        margin-top: -4.3mm;
+        color: #475569;
+        font-size: 5.8pt;
+        text-align: center;
+        transform: translateY(5.4mm);
+      }
+
+      .coluna-qr {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+        padding-left: 2mm;
+        border-left: 0.3mm dashed #cbd5e1;
+        text-align: center;
+      }
+
+      .coluna-qr img {
+        display: block;
+        width: 20mm;
+        height: 20mm;
+        object-fit: contain;
+      }
+
+      .coluna-qr strong {
+        margin-top: 1mm;
+        color: #0C7886;
+        font-size: 6.5pt;
+      }
+
+      .coluna-qr span {
+        margin-top: 0.5mm;
+        font-size: 6pt;
+        font-weight: 700;
+      }
+
+      .coluna-qr small {
+        margin-top: 1mm;
+        color: #64748b;
+        font-size: 5.2pt;
+        line-height: 1.15;
+      }
+
+      @media print {
+        html,
+        body {
+          width: 210mm;
+          height: auto;
+        }
+
+        .promissoria {
+          width: 210mm;
+          height: 99mm;
+        }
+      }
+    `;
+  }
+
+  async function imprimirPromissoria(
+    crediario,
+    parcela,
+  ) {
+    if (!crediario || !parcela) return;
+
+    try {
+      const qrCode = await criarQRCodeCrediario(
+        crediario,
+        parcela,
+      );
+
+      const htmlPromissoria = criarHTMLPromissoria({
+        crediario,
+        parcela,
+        qrCode,
+        modoIndividual: true,
+      });
+
+      const janela = window.open(
+        "",
+        "_blank",
+        "width=1100,height=850",
+      );
+
+      if (!janela) {
+        alert(
+          "Autorize os pop-ups do navegador para imprimir.",
+        );
+        return;
+      }
+
+      janela.document.write(`
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+          <head>
+            <meta charset="UTF-8" />
+
+            <meta
+              name="viewport"
+              content="width=device-width, initial-scale=1"
+            />
+
+            <title>
+              Promissória ${obterCodigoCrediario(
+                crediario,
+              )} - Parcela ${parcela.numero_parcela}
+            </title>
+
+            <style>
+              ${criarCSSImpressao()}
+            </style>
+          </head>
+
+          <body>
+            ${htmlPromissoria}
+
+            <script>
+              window.addEventListener("load", function () {
+                setTimeout(function () {
+                  window.print();
+                }, 400);
+              });
+            </script>
+          </body>
+        </html>
+      `);
+
+      janela.document.close();
+    } catch (error) {
+      console.error(
+        "Erro ao imprimir promissória:",
+        error,
+      );
+
+      alert(
+        "Não foi possível gerar a promissória para impressão.",
+      );
+    }
+  }
+
+  async function imprimirTodasPromissorias(
+    crediario,
+    parcelas,
   ) {
     if (!crediario) {
       alert("Crediário não selecionado.");
@@ -1551,149 +2234,23 @@ export default function Crediario() {
 
     if (!parcelas?.length) {
       alert(
-        "Nenhuma parcela encontrada para impressão."
+        "Nenhuma parcela encontrada para impressão.",
       );
       return;
     }
-
-    const cliente = crediario?.cliente || {};
-
-    const numeroCrediario =
-      crediario.numero_crediario ||
-      String(crediario.id).slice(0, 8).toUpperCase();
-
-    const endereco = [
-      cliente.endereco,
-      cliente.numero,
-      cliente.bairro,
-      cliente.cidade,
-      cliente.estado,
-    ]
-      .filter(Boolean)
-      .join(" - ");
-
-    const parcelasOrdenadas = [...parcelas].sort(
-      (a, b) =>
-        Number(a.numero_parcela) -
-        Number(b.numero_parcela)
-    );
 
     const janela = window.open(
       "",
       "_blank",
-      "width=1000,height=800"
+      "width=1100,height=850",
     );
 
     if (!janela) {
       alert(
-        "Autorize os pop-ups do navegador para imprimir todas as promissórias."
+        "Autorize os pop-ups do navegador para imprimir todas as promissórias.",
       );
       return;
     }
-
-    const promissoriasHTML = parcelasOrdenadas
-      .map((parcela) => {
-        const valor =
-          Number(parcela.valor_parcela || 0) +
-          Number(parcela.valor_juros || 0) +
-          Number(parcela.valor_multa || 0) -
-          Number(parcela.valor_desconto || 0);
-
-        return `
-          <section class="promissoria">
-            <div class="cabecalho">
-              <div>
-                <h1>NOTA PROMISSÓRIA</h1>
-
-                <p>
-                  Crediário nº ${numeroCrediario}
-                </p>
-              </div>
-
-              <div class="dados-parcela">
-                <strong>
-                  Parcela ${parcela.numero_parcela} de ${
-          crediario.quantidade_parcelas
-        }
-                </strong>
-
-                <span>
-                  Vencimento:
-                  ${dataBrasil(parcela.data_vencimento)}
-                </span>
-              </div>
-            </div>
-
-            <div class="conteudo">
-              <div class="valor">
-                ${moeda(valor)}
-              </div>
-
-              <p class="texto-principal">
-                No vencimento desta nota promissória, em
-                <strong>
-                  ${dataBrasil(parcela.data_vencimento)}
-                </strong>,
-                pagarei por esta única via a quantia de
-                <strong>${moeda(valor)}</strong>,
-                referente à parcela
-                <strong>${parcela.numero_parcela}</strong>
-                do crediário nº
-                <strong>${numeroCrediario}</strong>.
-              </p>
-
-              <div class="dados-cliente">
-                <div>
-                  <strong>Cliente:</strong>
-                  ${obterNomeCliente(cliente)}
-                </div>
-
-                <div>
-                  <strong>CPF:</strong>
-                  ${cliente.cpf || "-"}
-                </div>
-
-                <div>
-                  <strong>Telefone:</strong>
-                  ${cliente.telefone || "-"}
-                </div>
-
-                <div>
-                  <strong>Endereço:</strong>
-                  ${endereco || "-"}
-                </div>
-
-                <div>
-                  <strong>Data da venda:</strong>
-                  ${dataBrasil(crediario.criado_em)}
-                </div>
-
-                <div>
-                  <strong>Vencimento:</strong>
-                  ${dataBrasil(parcela.data_vencimento)}
-                </div>
-              </div>
-
-              <div class="assinatura">
-                <div class="linha-assinatura"></div>
-
-                <strong>
-                  ${obterNomeCliente(cliente)}
-                </strong>
-
-                <div>
-                  CPF: ${cliente.cpf || "-"}
-                </div>
-              </div>
-
-              <div class="rodape">
-                Documento gerado pelo sistema Smart UP.
-              </div>
-            </div>
-          </section>
-        `;
-      })
-      .join("");
 
     janela.document.write(`
       <!DOCTYPE html>
@@ -1701,98 +2258,115 @@ export default function Crediario() {
         <head>
           <meta charset="UTF-8" />
 
-          <title>
-            Promissórias do crediário 
-          </title>
+          <title>Preparando promissórias...</title>
 
           <style>
-            * {
-              box-sizing: border-box;
+            body {
+              display: flex;
+              min-height: 100vh;
+              align-items: center;
+              justify-content: center;
+              margin: 0;
+              font-family: Arial, sans-serif;
+              color: #334155;
+              background: #f8fafc;
             }
 
-            @page{
-    size:A4;
-    margin:10mm;
-}
-
-body{
-    margin:0;
-    padding:0;
-    font-family:Arial,Helvetica,sans-serif;
-}
-
-.promissoria{
-    width:100%;
-    height:100mm;
-    border:2px solid #0C7886;
-    margin-bottom:4mm;
-    page-break-inside:avoid;
-    display:flex;
-    flex-direction:column;
-}
-
-.promissoria:nth-child(3n){
-    page-break-after:always;
-}
-
-.cabecalho{
-    background:#0C7886;
-    color:white;
-    padding:8px 15px;
-}
-
-.conteudo{
-    flex:1;
-    padding:12px 18px;
-}
-
-.assinatura{
-    margin-top:auto;
-    padding-top:12px;
-    text-align:center;
-}
-
-.linha-assinatura{
-    width:70%;
-    margin:auto;
-    border-top:1px solid black;
-}
-
-            .rodape {
-              margin-top: 38px;
+            .carregando {
+              padding: 24px 32px;
+              border: 1px solid #e2e8f0;
+              border-radius: 18px;
+              background: #ffffff;
+              box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
               text-align: center;
-              color: #64748b;
-              font-size: 12px;
-            }
-
-            @media print {
-              body {
-                padding: 0;
-              }
-
-              .promissoria {
-                max-width: none;
-                min-height: 270mm;
-                margin: 0;
-                border-radius: 0;
-              }
             }
           </style>
         </head>
 
         <body>
-          ${promissoriasHTML}
-
-          <script>
-            window.onload = function () {
-              window.print();
-            };
-          </script>
+          <div class="carregando">
+            Preparando as promissórias para impressão...
+          </div>
         </body>
       </html>
     `);
 
     janela.document.close();
+
+    try {
+      const parcelasOrdenadas = [...parcelas].sort(
+        (a, b) =>
+          Number(a.numero_parcela) -
+          Number(b.numero_parcela),
+      );
+
+      const promissoriasHTML = [];
+
+      for (const parcela of parcelasOrdenadas) {
+        const qrCode = await criarQRCodeCrediario(
+          crediario,
+          parcela,
+        );
+
+        promissoriasHTML.push(
+          criarHTMLPromissoria({
+            crediario,
+            parcela,
+            qrCode,
+          }),
+        );
+      }
+
+      janela.document.open();
+
+      janela.document.write(`
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+          <head>
+            <meta charset="UTF-8" />
+
+            <meta
+              name="viewport"
+              content="width=device-width, initial-scale=1"
+            />
+
+            <title>
+              Promissórias do crediário
+              ${obterCodigoCrediario(crediario)}
+            </title>
+
+            <style>
+              ${criarCSSImpressao()}
+            </style>
+          </head>
+
+          <body>
+            ${promissoriasHTML.join("")}
+
+            <script>
+              window.addEventListener("load", function () {
+                setTimeout(function () {
+                  window.print();
+                }, 500);
+              });
+            </script>
+          </body>
+        </html>
+      `);
+
+      janela.document.close();
+    } catch (error) {
+      console.error(
+        "Erro ao imprimir todas as promissórias:",
+        error,
+      );
+
+      janela.close();
+
+      alert(
+        "Não foi possível gerar todas as promissórias.",
+      );
+    }
   }
 
   if (!empresaId) {
@@ -1976,16 +2550,15 @@ body{
                       >
                         <td className="px-5 py-4 text-sm font-black text-slate-700">
                           #
-                          {crediario.numero_crediario ||
-                            String(crediario.id)
-                              .slice(0, 8)
-                              .toUpperCase()}
+                          {obterCodigoCrediario(
+                            crediario,
+                          )}
                         </td>
 
                         <td className="px-5 py-4">
                           <p className="text-sm font-bold text-slate-800">
                             {obterNomeCliente(
-                              crediario.cliente
+                              crediario.cliente,
                             )}
                           </p>
 
@@ -1998,13 +2571,13 @@ body{
 
                         <td className="px-5 py-4 text-sm font-black text-slate-800">
                           {moeda(
-                            crediario.valor_total
+                            crediario.valor_total,
                           )}
                         </td>
 
                         <td className="px-5 py-4 text-sm text-slate-700">
                           {moeda(
-                            crediario.valor_entrada
+                            crediario.valor_entrada,
                           )}
                         </td>
 
@@ -2018,7 +2591,7 @@ body{
                         <td className="px-5 py-4">
                           <span
                             className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${classeStatus(
-                              crediario.status
+                              crediario.status,
                             )}`}
                           >
                             {STATUS_CREDIARIO[
@@ -2039,7 +2612,7 @@ body{
                           </button>
                         </td>
                       </tr>
-                    )
+                    ),
                   )}
                 </tbody>
               </table>
@@ -2068,7 +2641,7 @@ body{
                     value={pesquisaCliente}
                     onChange={(event) =>
                       setPesquisaCliente(
-                        event.target.value
+                        event.target.value,
                       )
                     }
                     placeholder="Pesquisar cliente por nome, CPF ou telefone..."
@@ -2083,7 +2656,7 @@ body{
                           type="button"
                           onClick={() =>
                             setClienteSelecionado(
-                              cliente
+                              cliente,
                             )
                           }
                           className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
@@ -2091,7 +2664,7 @@ body{
                           <div>
                             <p className="font-bold text-slate-800">
                               {obterNomeCliente(
-                                cliente
+                                cliente,
                               )}
                             </p>
 
@@ -2108,7 +2681,7 @@ body{
                             Selecionar
                           </span>
                         </button>
-                      )
+                      ),
                     )}
 
                     {clientesFiltrados.length ===
@@ -2125,7 +2698,7 @@ body{
                     <div>
                       <p className="font-black text-emerald-800">
                         {obterNomeCliente(
-                          clienteSelecionado
+                          clienteSelecionado,
                         )}
                       </p>
 
@@ -2160,7 +2733,7 @@ body{
                 value={pesquisaProduto}
                 onChange={(event) =>
                   setPesquisaProduto(
-                    event.target.value
+                    event.target.value,
                   )
                 }
                 placeholder="Pesquisar produto por nome ou código..."
@@ -2201,7 +2774,7 @@ body{
                         Adicionar
                       </button>
                     </div>
-                  )
+                  ),
                 )}
 
                 {produtosFiltrados.length ===
@@ -2258,7 +2831,7 @@ body{
                               onChange={(event) =>
                                 alterarQuantidade(
                                   item.produto_id,
-                                  event.target.value
+                                  event.target.value,
                                 )
                               }
                               className="w-24 rounded-xl border border-slate-300 px-3 py-2"
@@ -2274,7 +2847,7 @@ body{
                               onChange={(event) =>
                                 alterarPreco(
                                   item.produto_id,
-                                  event.target.value
+                                  event.target.value,
                                 )
                               }
                               className="w-32 rounded-xl border border-slate-300 px-3 py-2"
@@ -2285,8 +2858,8 @@ body{
                             {moeda(
                               Number(item.preco) *
                                 Number(
-                                  item.quantidade
-                                )
+                                  item.quantidade,
+                                ),
                             )}
                           </td>
 
@@ -2295,7 +2868,7 @@ body{
                               type="button"
                               onClick={() =>
                                 removerProduto(
-                                  item.produto_id
+                                  item.produto_id,
                                 )
                               }
                               className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600"
@@ -2337,7 +2910,7 @@ body{
                           ...anterior,
                           valorEntrada:
                             event.target.value,
-                        })
+                        }),
                       )
                     }
                     className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2362,7 +2935,7 @@ body{
                           ...anterior,
                           quantidadeParcelas:
                             event.target.value,
-                        })
+                        }),
                       )
                     }
                     className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2385,7 +2958,7 @@ body{
                           ...anterior,
                           primeiroVencimento:
                             event.target.value,
-                        })
+                        }),
                       )
                     }
                     className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2408,7 +2981,7 @@ body{
                           ...anterior,
                           observacao:
                             event.target.value,
-                        })
+                        }),
                       )
                     }
                     className="mt-2 w-full resize-none rounded-2xl border border-slate-300 px-4 py-3"
@@ -2471,18 +3044,18 @@ body{
 
                         <p className="text-xs text-slate-400">
                           {dataBrasil(
-                            parcela.data_vencimento
+                            parcela.data_vencimento,
                           )}
                         </p>
                       </div>
 
                       <strong className="text-[#0C7886]">
                         {moeda(
-                          parcela.valor_parcela
+                          parcela.valor_parcela,
                         )}
                       </strong>
                     </div>
-                  )
+                  ),
                 )}
               </div>
             </section>
@@ -2519,7 +3092,7 @@ body{
               <StatCard
                 titulo="Cliente"
                 valor={obterNomeCliente(
-                  crediarioSelecionado.cliente
+                  crediarioSelecionado.cliente,
                 )}
                 descricao={`CPF: ${
                   crediarioSelecionado.cliente
@@ -2530,17 +3103,17 @@ body{
               <StatCard
                 titulo="Valor da venda"
                 valor={moeda(
-                  crediarioSelecionado.valor_total
+                  crediarioSelecionado.valor_total,
                 )}
                 descricao={`Entrada: ${moeda(
-                  crediarioSelecionado.valor_entrada
+                  crediarioSelecionado.valor_entrada,
                 )}`}
               />
 
               <StatCard
                 titulo="Valor financiado"
                 valor={moeda(
-                  crediarioSelecionado.valor_financiado
+                  crediarioSelecionado.valor_financiado,
                 )}
                 descricao={`${crediarioSelecionado.quantidade_parcelas} parcelas`}
               />
@@ -2554,13 +3127,13 @@ body{
                   crediarioSelecionado.status
                 }
                 descricao={`Criado em ${dataBrasil(
-                  crediarioSelecionado.criado_em
+                  crediarioSelecionado.criado_em,
                 )}`}
               />
             </div>
 
             {obterItensCrediario(
-              crediarioSelecionado
+              crediarioSelecionado,
             ).length > 0 && (
               <section className="mt-6 rounded-3xl border border-slate-200 p-5">
                 <h3 className="font-black text-slate-900">
@@ -2591,7 +3164,7 @@ body{
 
                     <tbody>
                       {obterItensCrediario(
-                        crediarioSelecionado
+                        crediarioSelecionado,
                       ).map((item, indice) => (
                         <tr
                           key={`${item.produto_id}-${indice}`}
@@ -2607,7 +3180,7 @@ body{
 
                           <td className="px-4 py-3 text-sm">
                             {moeda(
-                              item.preco_unitario
+                              item.preco_unitario,
                             )}
                           </td>
 
@@ -2630,8 +3203,8 @@ body{
                   </h3>
 
                   <p className="mt-1 text-sm text-slate-500">
-                    Receba parcelas ou imprima as
-                    promissórias desta venda.
+                    Impressão em formato A4 com três
+                    promissórias por folha.
                   </p>
                 </div>
 
@@ -2640,7 +3213,7 @@ body{
                   onClick={() =>
                     imprimirTodasPromissorias(
                       crediarioSelecionado,
-                      parcelasSelecionadas
+                      parcelasSelecionadas,
                     )
                   }
                   disabled={
@@ -2705,34 +3278,34 @@ body{
 
                           <td className="px-4 py-3 text-sm">
                             {dataBrasil(
-                              parcela.data_vencimento
+                              parcela.data_vencimento,
                             )}
                           </td>
 
                           <td className="px-4 py-3 text-sm font-bold">
                             {moeda(
-                              parcela.valor_parcela
+                              parcela.valor_parcela,
                             )}
                           </td>
 
                           <td className="px-4 py-3 text-sm text-emerald-700">
                             {moeda(
-                              parcela.valor_pago
+                              parcela.valor_pago,
                             )}
                           </td>
 
                           <td className="px-4 py-3 text-sm font-black">
                             {moeda(
                               calcularSaldoParcela(
-                                parcela
-                              )
+                                parcela,
+                              ),
                             )}
                           </td>
 
                           <td className="px-4 py-3">
                             <span
                               className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${classeStatus(
-                                parcela.status
+                                parcela.status,
                               )}`}
                             >
                               {STATUS_PARCELA[
@@ -2748,13 +3321,13 @@ body{
                                 "CANCELADA",
                                 "RENEGOCIADA",
                               ].includes(
-                                parcela.status
+                                parcela.status,
                               ) && (
                                 <button
                                   type="button"
                                   onClick={() =>
                                     abrirRecebimento(
-                                      parcela
+                                      parcela,
                                     )
                                   }
                                   className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white"
@@ -2768,7 +3341,7 @@ body{
                                 onClick={() =>
                                   imprimirPromissoria(
                                     crediarioSelecionado,
-                                    parcela
+                                    parcela,
                                   )
                                 }
                                 className="rounded-xl bg-[#0C7886] px-3 py-2 text-xs font-bold text-white"
@@ -2778,7 +3351,7 @@ body{
                             </div>
                           </td>
                         </tr>
-                      )
+                      ),
                     )}
 
                     {parcelasSelecionadas.length ===
@@ -2825,15 +3398,15 @@ body{
                 Saldo:{" "}
                 {moeda(
                   calcularSaldoParcela(
-                    parcelaRecebimento
-                  )
+                    parcelaRecebimento,
+                  ),
                 )}
               </p>
 
               <p className="mt-2 text-sm text-slate-400">
                 Vencimento:{" "}
                 {dataBrasil(
-                  parcelaRecebimento.data_vencimento
+                  parcelaRecebimento.data_vencimento,
                 )}
               </p>
             </div>
@@ -2855,7 +3428,7 @@ body{
                         ...anterior,
                         valor:
                           event.target.value,
-                      })
+                      }),
                     )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2877,7 +3450,7 @@ body{
                         ...anterior,
                         formaPagamento:
                           event.target.value,
-                      })
+                      }),
                     )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2890,7 +3463,7 @@ body{
                       >
                         {forma}
                       </option>
-                    )
+                    ),
                   )}
                 </select>
               </label>
@@ -2911,7 +3484,7 @@ body{
                         ...anterior,
                         desconto:
                           event.target.value,
-                      })
+                      }),
                     )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2934,7 +3507,7 @@ body{
                         ...anterior,
                         juros:
                           event.target.value,
-                      })
+                      }),
                     )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2957,7 +3530,7 @@ body{
                         ...anterior,
                         multa:
                           event.target.value,
-                      })
+                      }),
                     )
                   }
                   className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3"
@@ -2980,7 +3553,7 @@ body{
                         ...anterior,
                         observacao:
                           event.target.value,
-                      })
+                      }),
                     )
                   }
                   className="mt-2 w-full resize-none rounded-2xl border border-slate-300 px-4 py-3"
