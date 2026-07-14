@@ -47,11 +47,11 @@ function dataBrasil(data) {
 }
 
 function hojeISO() {
-  const hoje = new Date();
+  const data = new Date();
 
-  const ano = hoje.getFullYear();
-  const mes = String(hoje.getMonth() + 1).padStart(2, "0");
-  const dia = String(hoje.getDate()).padStart(2, "0");
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const dia = String(data.getDate()).padStart(2, "0");
 
   return `${ano}-${mes}-${dia}`;
 }
@@ -129,14 +129,26 @@ function obterEmpresaId() {
   }
 }
 
+function obterNomeCliente(cliente) {
+  return (
+    cliente?.nome ||
+    cliente?.nome_completo ||
+    cliente?.cliente_nome ||
+    "Cliente sem nome"
+  );
+}
+
 function calcularSaldoParcela(parcela) {
-  const valor = Number(parcela?.valor_parcela || 0);
+  const valorParcela = Number(parcela?.valor_parcela || 0);
+  const valorPago = Number(parcela?.valor_pago || 0);
+  const desconto = Number(parcela?.valor_desconto || 0);
   const juros = Number(parcela?.valor_juros || 0);
   const multa = Number(parcela?.valor_multa || 0);
-  const desconto = Number(parcela?.valor_desconto || 0);
-  const pago = Number(parcela?.valor_pago || 0);
 
-  return Math.max(0, valor + juros + multa - desconto - pago);
+  return Math.max(
+    0,
+    valorParcela + juros + multa - desconto - valorPago
+  );
 }
 
 function classeStatus(status) {
@@ -158,25 +170,20 @@ function classeStatus(status) {
   return classes[status] || "bg-slate-100 text-slate-600";
 }
 
-function obterNomeCliente(cliente) {
-  return (
-    cliente?.nome ||
-    cliente?.nome_completo ||
-    cliente?.cliente_nome ||
-    "Cliente sem nome"
-  );
-}
-
 function StatCard({ titulo, valor, descricao }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-slate-500">{titulo}</p>
+      <p className="text-sm font-semibold text-slate-500">
+        {titulo}
+      </p>
 
       <p className="mt-2 text-2xl font-black text-slate-900">
         {valor}
       </p>
 
-      <p className="mt-1 text-xs text-slate-400">{descricao}</p>
+      <p className="mt-1 text-xs text-slate-400">
+        {descricao}
+      </p>
     </div>
   );
 }
@@ -233,14 +240,20 @@ export default function Crediario() {
 
   const [modalNovaVenda, setModalNovaVenda] = useState(false);
   const [modalDetalhes, setModalDetalhes] = useState(false);
-  const [modalRecebimento, setModalRecebimento] = useState(false);
+  const [modalRecebimento, setModalRecebimento] =
+    useState(false);
 
-  const [clienteSelecionado, setClienteSelecionado] = useState(null);
+  const [clienteSelecionado, setClienteSelecionado] =
+    useState(null);
+
   const [crediarioSelecionado, setCrediarioSelecionado] =
     useState(null);
 
-  const [parcelaRecebimento, setParcelaRecebimento] = useState(null);
-  const [parcelasSelecionadas, setParcelasSelecionadas] = useState([]);
+  const [parcelaRecebimento, setParcelaRecebimento] =
+    useState(null);
+
+  const [parcelasSelecionadas, setParcelasSelecionadas] =
+    useState([]);
 
   const [pesquisaCliente, setPesquisaCliente] = useState("");
   const [pesquisaProduto, setPesquisaProduto] = useState("");
@@ -265,10 +278,10 @@ export default function Crediario() {
 
   const totalVenda = useMemo(() => {
     return itens.reduce((total, item) => {
-      return (
-        total +
-        Number(item.preco || 0) * Number(item.quantidade || 0)
-      );
+      const preco = Number(item.preco || 0);
+      const quantidade = Number(item.quantidade || 0);
+
+      return total + preco * quantidade;
     }, 0);
   }, [itens]);
 
@@ -290,22 +303,30 @@ export default function Crediario() {
     );
 
     const totalCentavos = Math.round(valorFinanciado * 100);
-    const valorBase = Math.floor(totalCentavos / quantidade);
-    const diferenca = totalCentavos - valorBase * quantidade;
+    const valorBaseCentavos = Math.floor(
+      totalCentavos / quantidade
+    );
 
-    return Array.from({ length: quantidade }, (_, indice) => {
-      const valorCentavos =
-        valorBase + (indice < diferenca ? 1 : 0);
+    const diferencaCentavos =
+      totalCentavos - valorBaseCentavos * quantidade;
 
-      return {
-        numero_parcela: indice + 1,
-        valor_parcela: valorCentavos / 100,
-        data_vencimento: adicionarMeses(
-          parcelamento.primeiroVencimento,
-          indice
-        ),
-      };
-    });
+    return Array.from(
+      { length: quantidade },
+      (_, indice) => {
+        const adicional =
+          indice < diferencaCentavos ? 1 : 0;
+
+        return {
+          numero_parcela: indice + 1,
+          valor_parcela:
+            (valorBaseCentavos + adicional) / 100,
+          data_vencimento: adicionarMeses(
+            parcelamento.primeiroVencimento,
+            indice
+          ),
+        };
+      }
+    );
   }, [
     valorFinanciado,
     parcelamento.quantidadeParcelas,
@@ -341,8 +362,13 @@ export default function Crediario() {
       .filter((produto) => {
         if (!termo) return true;
 
-        const nome = String(produto?.nome || "").toLowerCase();
-        const codigo = String(produto?.codigo || "").toLowerCase();
+        const nome = String(
+          produto?.nome || ""
+        ).toLowerCase();
+
+        const codigo = String(
+          produto?.codigo || ""
+        ).toLowerCase();
 
         return nome.includes(termo) || codigo.includes(termo);
       })
@@ -356,20 +382,22 @@ export default function Crediario() {
     return crediarios.filter((crediario) => {
       const cliente = crediario?.cliente || {};
 
-      const correspondeStatus =
+      const statusCorresponde =
         filtroStatus === "TODOS" ||
         crediario.status === filtroStatus;
 
-      const correspondePesquisa =
+      const pesquisaCorresponde =
         !termo ||
-        obterNomeCliente(cliente).toLowerCase().includes(termo) ||
+        obterNomeCliente(cliente)
+          .toLowerCase()
+          .includes(termo) ||
         (numeros &&
           somenteNumeros(cliente?.cpf).includes(numeros)) ||
         String(crediario?.numero_crediario || "")
           .toLowerCase()
           .includes(termo);
 
-      return correspondeStatus && correspondePesquisa;
+      return statusCorresponde && pesquisaCorresponde;
     });
   }, [crediarios, pesquisa, filtroStatus]);
 
@@ -378,7 +406,7 @@ export default function Crediario() {
     let totalVencido = 0;
     let totalRecebido = 0;
 
-    const inadimplentes = new Set();
+    const clientesInadimplentes = new Set();
 
     crediarios.forEach((crediario) => {
       const parcelas = crediario?.parcelas || [];
@@ -392,7 +420,7 @@ export default function Crediario() {
 
         if (parcela.status === "ATRASADA") {
           totalVencido += saldo;
-          inadimplentes.add(crediario.cliente_id);
+          clientesInadimplentes.add(crediario.cliente_id);
         }
 
         totalRecebido += Number(parcela.valor_pago || 0);
@@ -403,7 +431,7 @@ export default function Crediario() {
       totalReceber,
       totalVencido,
       totalRecebido,
-      inadimplentes: inadimplentes.size,
+      inadimplentes: clientesInadimplentes.size,
     };
   }, [crediarios]);
 
@@ -450,16 +478,18 @@ export default function Crediario() {
   const carregarCrediarios = useCallback(async () => {
     if (!empresaId) return;
 
-    const { data: dadosCrediarios, error: erroCrediarios } =
-      await supabase
-        .from("crediarios")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("criado_em", { ascending: false });
+    const {
+      data: dadosCrediarios,
+      error: erroCrediarios,
+    } = await supabase
+      .from("crediarios")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .order("criado_em", { ascending: false });
 
     if (erroCrediarios) {
       console.error(
-        "Erro ao consultar a tabela crediarios:",
+        "Erro ao carregar crediários:",
         erroCrediarios
       );
 
@@ -468,7 +498,7 @@ export default function Crediario() {
       );
     }
 
-    if (!dadosCrediarios || dadosCrediarios.length === 0) {
+    if (!dadosCrediarios?.length) {
       setCrediarios([]);
       return;
     }
@@ -481,7 +511,12 @@ export default function Crediario() {
       ),
     ];
 
+    const crediariosIds = dadosCrediarios.map(
+      (crediario) => crediario.id
+    );
+
     let dadosClientes = [];
+    let dadosParcelas = [];
 
     if (clientesIds.length > 0) {
       const { data, error } = await supabase
@@ -491,11 +526,6 @@ export default function Crediario() {
         .in("id", clientesIds);
 
       if (error) {
-        console.error(
-          "Erro ao carregar clientes relacionados:",
-          error
-        );
-
         throw new Error(
           `Não foi possível carregar os clientes dos crediários: ${error.message}`
         );
@@ -503,12 +533,6 @@ export default function Crediario() {
 
       dadosClientes = data || [];
     }
-
-    const crediariosIds = dadosCrediarios.map(
-      (crediario) => crediario.id
-    );
-
-    let dadosParcelas = [];
 
     if (crediariosIds.length > 0) {
       const { data, error } = await supabase
@@ -519,8 +543,6 @@ export default function Crediario() {
         .order("numero_parcela", { ascending: true });
 
       if (error) {
-        console.error("Erro ao carregar parcelas:", error);
-
         throw new Error(
           `Não foi possível carregar as parcelas: ${error.message}`
         );
@@ -542,49 +564,55 @@ export default function Crediario() {
         parcelasPorCrediario[parcela.crediario_id] = [];
       }
 
-      parcelasPorCrediario[parcela.crediario_id].push(parcela);
+      parcelasPorCrediario[parcela.crediario_id].push(
+        parcela
+      );
     });
 
-    const registros = dadosCrediarios.map((crediario) => ({
-      ...crediario,
+    const registrosMontados = dadosCrediarios.map(
+      (crediario) => ({
+        ...crediario,
 
-      cliente: clientesPorId[crediario.cliente_id] || {
-        id: crediario.cliente_id,
-        nome: "Cliente não encontrado",
-        cpf: "",
-        telefone: "",
-      },
+        cliente: clientesPorId[crediario.cliente_id] || {
+          id: crediario.cliente_id,
+          nome: "Cliente não encontrado",
+          cpf: "",
+          telefone: "",
+        },
 
-      parcelas: (
-        parcelasPorCrediario[crediario.id] || []
-      ).sort(
-        (a, b) =>
-          Number(a.numero_parcela) - Number(b.numero_parcela)
-      ),
-    }));
-
-    setCrediarios(registros);
-  }, [empresaId]);
-
-  const atualizarParcelasAtrasadas = useCallback(async () => {
-    if (!empresaId) return;
-
-    const { error } = await supabase
-      .from("crediario_parcelas")
-      .update({
-        status: "ATRASADA",
+        parcelas: (
+          parcelasPorCrediario[crediario.id] || []
+        ).sort(
+          (a, b) =>
+            Number(a.numero_parcela) -
+            Number(b.numero_parcela)
+        ),
       })
-      .eq("empresa_id", empresaId)
-      .lt("data_vencimento", hojeISO())
-      .in("status", ["PENDENTE", "PARCIAL"]);
+    );
 
-    if (error) {
-      console.warn(
-        "Não foi possível atualizar parcelas atrasadas:",
-        error
-      );
-    }
+    setCrediarios(registrosMontados);
   }, [empresaId]);
+
+  const atualizarParcelasAtrasadas =
+    useCallback(async () => {
+      if (!empresaId) return;
+
+      const { error } = await supabase
+        .from("crediario_parcelas")
+        .update({
+          status: "ATRASADA",
+        })
+        .eq("empresa_id", empresaId)
+        .lt("data_vencimento", hojeISO())
+        .in("status", ["PENDENTE", "PARCIAL"]);
+
+      if (error) {
+        console.warn(
+          "Não foi possível atualizar parcelas atrasadas:",
+          error
+        );
+      }
+    }, [empresaId]);
 
   const carregarTudo = useCallback(async () => {
     if (!empresaId) {
@@ -603,7 +631,7 @@ export default function Crediario() {
         carregarCrediarios(),
       ]);
     } catch (error) {
-      console.error("Erro ao carregar crediário:", error);
+      console.error(error);
 
       alert(
         error?.message ||
@@ -677,7 +705,10 @@ export default function Crediario() {
     ]);
   }
 
-  function alterarQuantidade(produtoId, quantidadeInformada) {
+  function alterarQuantidade(
+    produtoId,
+    quantidadeInformada
+  ) {
     const quantidade = Math.max(
       1,
       Number(quantidadeInformada || 1)
@@ -748,7 +779,7 @@ export default function Crediario() {
         Number(item.quantidade || 0)
       ) {
         throw new Error(
-          `Estoque insuficiente para ${data.nome}. Estoque disponível: ${data.estoque}.`
+          `Estoque insuficiente para ${data.nome}. Disponível: ${data.estoque}.`
         );
       }
     }
@@ -893,6 +924,7 @@ export default function Crediario() {
 
       const observacaoCompleta = JSON.stringify({
         observacao: parcelamento.observacao || "",
+
         itens: itens.map((item) => ({
           produto_id: item.produto_id,
           nome: item.nome,
@@ -1229,10 +1261,7 @@ export default function Crediario() {
 
       alert("Pagamento registrado com sucesso.");
     } catch (error) {
-      console.error(
-        "Erro ao receber parcela:",
-        error
-      );
+      console.error(error);
 
       alert(
         error?.message ||
@@ -1257,17 +1286,14 @@ export default function Crediario() {
     }
   }
 
-  function imprimirPromissoria(
-    crediario,
-    parcela
-  ) {
+  function imprimirPromissoria(crediario, parcela) {
+    if (!crediario || !parcela) return;
+
     const cliente = crediario?.cliente || {};
 
     const numeroCrediario =
       crediario.numero_crediario ||
-      String(crediario.id)
-        .slice(0, 8)
-        .toUpperCase();
+      String(crediario.id).slice(0, 8).toUpperCase();
 
     const valor =
       Number(parcela.valor_parcela || 0) +
@@ -1303,7 +1329,11 @@ export default function Crediario() {
       <html lang="pt-BR">
         <head>
           <meta charset="UTF-8" />
-          <title>Promissória ${numeroCrediario}</title>
+
+          <title>
+            Promissória ${numeroCrediario} -
+            Parcela ${parcela.numero_parcela}
+          </title>
 
           <style>
             * {
@@ -1315,6 +1345,7 @@ export default function Crediario() {
               padding: 30px;
               font-family: Arial, Helvetica, sans-serif;
               color: #0f172a;
+              background: white;
             }
 
             .promissoria {
@@ -1329,6 +1360,7 @@ export default function Crediario() {
               display: flex;
               align-items: center;
               justify-content: space-between;
+              gap: 20px;
               padding: 22px 26px;
               background: #0C7886;
               color: white;
@@ -1337,6 +1369,11 @@ export default function Crediario() {
             .cabecalho h1 {
               margin: 0;
               font-size: 26px;
+            }
+
+            .dados-parcela {
+              text-align: right;
+              line-height: 1.6;
             }
 
             .conteudo {
@@ -1354,19 +1391,19 @@ export default function Crediario() {
               font-weight: bold;
             }
 
-            p {
+            .texto {
               font-size: 16px;
-              line-height: 1.7;
+              line-height: 1.8;
             }
 
-            .dados {
+            .dados-cliente {
               margin-top: 25px;
               padding: 20px;
               border-radius: 12px;
               background: #f8fafc;
             }
 
-            .dados div {
+            .dados-cliente div {
               margin-bottom: 9px;
             }
 
@@ -1382,6 +1419,13 @@ export default function Crediario() {
               border-top: 1px solid #0f172a;
             }
 
+            .rodape {
+              margin-top: 35px;
+              text-align: center;
+              color: #64748b;
+              font-size: 12px;
+            }
+
             @media print {
               body {
                 padding: 0;
@@ -1395,15 +1439,24 @@ export default function Crediario() {
         </head>
 
         <body>
-          <div class="promissoria">
+          <section class="promissoria">
             <div class="cabecalho">
-              <h1>NOTA PROMISSÓRIA</h1>
-
               <div>
-                <strong>Crediário nº ${numeroCrediario}</strong><br />
-                Parcela ${parcela.numero_parcela} de ${
+                <h1>NOTA PROMISSÓRIA</h1>
+                <div>Crediário nº ${numeroCrediario}</div>
+              </div>
+
+              <div class="dados-parcela">
+                <strong>
+                  Parcela ${parcela.numero_parcela} de ${
       crediario.quantidade_parcelas
     }
+                </strong>
+
+                <div>
+                  Vencimento:
+                  ${dataBrasil(parcela.data_vencimento)}
+                </div>
               </div>
             </div>
 
@@ -1412,20 +1465,20 @@ export default function Crediario() {
                 ${moeda(valor)}
               </div>
 
-              <p>
+              <p class="texto">
                 No vencimento desta nota promissória, em
-                <strong>${dataBrasil(
-                  parcela.data_vencimento
-                )}</strong>,
+                <strong>
+                  ${dataBrasil(parcela.data_vencimento)}
+                </strong>,
                 pagarei por esta única via a quantia de
                 <strong>${moeda(valor)}</strong>,
                 referente à parcela
                 <strong>${parcela.numero_parcela}</strong>
-                do crediário
+                do crediário nº
                 <strong>${numeroCrediario}</strong>.
               </p>
 
-              <div class="dados">
+              <div class="dados-cliente">
                 <div>
                   <strong>Cliente:</strong>
                   ${obterNomeCliente(cliente)}
@@ -1447,10 +1500,13 @@ export default function Crediario() {
                 </div>
 
                 <div>
+                  <strong>Data da venda:</strong>
+                  ${dataBrasil(crediario.criado_em)}
+                </div>
+
+                <div>
                   <strong>Vencimento:</strong>
-                  ${dataBrasil(
-                    parcela.data_vencimento
-                  )}
+                  ${dataBrasil(parcela.data_vencimento)}
                 </div>
               </div>
 
@@ -1465,8 +1521,321 @@ export default function Crediario() {
                   CPF: ${cliente.cpf || "-"}
                 </div>
               </div>
+
+              <div class="rodape">
+                Documento gerado pelo sistema Smart UP.
+              </div>
             </div>
-          </div>
+          </section>
+
+          <script>
+            window.onload = function () {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    janela.document.close();
+  }
+
+  function imprimirTodasPromissorias(
+    crediario,
+    parcelas
+  ) {
+    if (!crediario) {
+      alert("Crediário não selecionado.");
+      return;
+    }
+
+    if (!parcelas?.length) {
+      alert(
+        "Nenhuma parcela encontrada para impressão."
+      );
+      return;
+    }
+
+    const cliente = crediario?.cliente || {};
+
+    const numeroCrediario =
+      crediario.numero_crediario ||
+      String(crediario.id).slice(0, 8).toUpperCase();
+
+    const endereco = [
+      cliente.endereco,
+      cliente.numero,
+      cliente.bairro,
+      cliente.cidade,
+      cliente.estado,
+    ]
+      .filter(Boolean)
+      .join(" - ");
+
+    const parcelasOrdenadas = [...parcelas].sort(
+      (a, b) =>
+        Number(a.numero_parcela) -
+        Number(b.numero_parcela)
+    );
+
+    const janela = window.open(
+      "",
+      "_blank",
+      "width=1000,height=800"
+    );
+
+    if (!janela) {
+      alert(
+        "Autorize os pop-ups do navegador para imprimir todas as promissórias."
+      );
+      return;
+    }
+
+    const promissoriasHTML = parcelasOrdenadas
+      .map((parcela) => {
+        const valor =
+          Number(parcela.valor_parcela || 0) +
+          Number(parcela.valor_juros || 0) +
+          Number(parcela.valor_multa || 0) -
+          Number(parcela.valor_desconto || 0);
+
+        return `
+          <section class="promissoria">
+            <div class="cabecalho">
+              <div>
+                <h1>NOTA PROMISSÓRIA</h1>
+
+                <p>
+                  Crediário nº ${numeroCrediario}
+                </p>
+              </div>
+
+              <div class="dados-parcela">
+                <strong>
+                  Parcela ${parcela.numero_parcela} de ${
+          crediario.quantidade_parcelas
+        }
+                </strong>
+
+                <span>
+                  Vencimento:
+                  ${dataBrasil(parcela.data_vencimento)}
+                </span>
+              </div>
+            </div>
+
+            <div class="conteudo">
+              <div class="valor">
+                ${moeda(valor)}
+              </div>
+
+              <p class="texto-principal">
+                No vencimento desta nota promissória, em
+                <strong>
+                  ${dataBrasil(parcela.data_vencimento)}
+                </strong>,
+                pagarei por esta única via a quantia de
+                <strong>${moeda(valor)}</strong>,
+                referente à parcela
+                <strong>${parcela.numero_parcela}</strong>
+                do crediário nº
+                <strong>${numeroCrediario}</strong>.
+              </p>
+
+              <div class="dados-cliente">
+                <div>
+                  <strong>Cliente:</strong>
+                  ${obterNomeCliente(cliente)}
+                </div>
+
+                <div>
+                  <strong>CPF:</strong>
+                  ${cliente.cpf || "-"}
+                </div>
+
+                <div>
+                  <strong>Telefone:</strong>
+                  ${cliente.telefone || "-"}
+                </div>
+
+                <div>
+                  <strong>Endereço:</strong>
+                  ${endereco || "-"}
+                </div>
+
+                <div>
+                  <strong>Data da venda:</strong>
+                  ${dataBrasil(crediario.criado_em)}
+                </div>
+
+                <div>
+                  <strong>Vencimento:</strong>
+                  ${dataBrasil(parcela.data_vencimento)}
+                </div>
+              </div>
+
+              <div class="assinatura">
+                <div class="linha-assinatura"></div>
+
+                <strong>
+                  ${obterNomeCliente(cliente)}
+                </strong>
+
+                <div>
+                  CPF: ${cliente.cpf || "-"}
+                </div>
+              </div>
+
+              <div class="rodape">
+                Documento gerado pelo sistema Smart UP.
+              </div>
+            </div>
+          </section>
+        `;
+      })
+      .join("");
+
+    janela.document.write(`
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="UTF-8" />
+
+          <title>
+            Promissórias do crediário ${numeroCrediario}
+          </title>
+
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+
+            @page {
+              size: A4;
+              margin: 10mm;
+            }
+
+            body {
+              margin: 0;
+              padding: 20px;
+              font-family: Arial, Helvetica, sans-serif;
+              color: #0f172a;
+              background: white;
+            }
+
+            .promissoria {
+              width: 100%;
+              max-width: 900px;
+              min-height: 650px;
+              margin: 0 auto 28px;
+              overflow: hidden;
+              border: 2px solid #0C7886;
+              border-radius: 16px;
+              page-break-after: always;
+              break-after: page;
+            }
+
+            .promissoria:last-child {
+              page-break-after: auto;
+              break-after: auto;
+            }
+
+            .cabecalho {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 20px;
+              padding: 22px 26px;
+              background: #0C7886;
+              color: white;
+            }
+
+            .cabecalho h1 {
+              margin: 0;
+              font-size: 26px;
+            }
+
+            .cabecalho p {
+              margin: 6px 0 0;
+              font-size: 14px;
+            }
+
+            .dados-parcela {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              text-align: right;
+              font-size: 14px;
+            }
+
+            .conteudo {
+              padding: 32px;
+            }
+
+            .valor {
+              display: inline-block;
+              margin-bottom: 24px;
+              padding: 12px 20px;
+              border: 2px solid #EE6D46;
+              border-radius: 12px;
+              color: #EE6D46;
+              font-size: 25px;
+              font-weight: bold;
+            }
+
+            .texto-principal {
+              font-size: 16px;
+              line-height: 1.8;
+            }
+
+            .dados-cliente {
+              margin-top: 28px;
+              padding: 20px;
+              border-radius: 12px;
+              background: #f8fafc;
+            }
+
+            .dados-cliente div {
+              margin-bottom: 10px;
+              font-size: 15px;
+            }
+
+            .assinatura {
+              margin-top: 90px;
+              text-align: center;
+            }
+
+            .linha-assinatura {
+              width: 440px;
+              max-width: 90%;
+              margin: 0 auto 8px;
+              border-top: 1px solid #0f172a;
+            }
+
+            .rodape {
+              margin-top: 38px;
+              text-align: center;
+              color: #64748b;
+              font-size: 12px;
+            }
+
+            @media print {
+              body {
+                padding: 0;
+              }
+
+              .promissoria {
+                max-width: none;
+                min-height: 270mm;
+                margin: 0;
+                border-radius: 0;
+              }
+            }
+          </style>
+        </head>
+
+        <body>
+          ${promissoriasHTML}
 
           <script>
             window.onload = function () {
@@ -1489,8 +1858,7 @@ export default function Crediario() {
           </h1>
 
           <p className="mt-3 text-red-600">
-            Não foi possível encontrar a empresa ativa na
-            chave smartup_empresa.
+            Não foi possível localizar a empresa ativa.
           </p>
         </div>
       </div>
@@ -1541,7 +1909,7 @@ export default function Crediario() {
           <StatCard
             titulo="Total recebido"
             valor={moeda(indicadores.totalRecebido)}
-            descricao="Valor recebido em parcelas"
+            descricao="Valor recebido nas parcelas"
           />
 
           <StatCard
@@ -1717,9 +2085,7 @@ export default function Crediario() {
                           <button
                             type="button"
                             onClick={() =>
-                              abrirDetalhes(
-                                crediario
-                              )
+                              abrirDetalhes(crediario)
                             }
                             className="rounded-xl bg-[#0C7886] px-4 py-2 text-xs font-bold text-white"
                           >
@@ -2311,9 +2677,34 @@ export default function Crediario() {
             )}
 
             <section className="mt-6 rounded-3xl border border-slate-200 p-5">
-              <h3 className="text-lg font-black text-slate-900">
-                Parcelas
-              </h3>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    Parcelas
+                  </h3>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Receba parcelas ou imprima as
+                    promissórias desta venda.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    imprimirTodasPromissorias(
+                      crediarioSelecionado,
+                      parcelasSelecionadas
+                    )
+                  }
+                  disabled={
+                    parcelasSelecionadas.length === 0
+                  }
+                  className="rounded-2xl bg-[#EE6D46] px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Imprimir todas as promissórias
+                </button>
+              </div>
 
               <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
                 <table className="min-w-full">
@@ -2442,6 +2833,18 @@ export default function Crediario() {
                           </td>
                         </tr>
                       )
+                    )}
+
+                    {parcelasSelecionadas.length ===
+                      0 && (
+                      <tr>
+                        <td
+                          colSpan="7"
+                          className="px-4 py-8 text-center text-sm text-slate-400"
+                        >
+                          Nenhuma parcela encontrada.
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
