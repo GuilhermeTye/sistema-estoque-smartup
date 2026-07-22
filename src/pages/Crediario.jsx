@@ -3348,6 +3348,13 @@ export default function Crediario() {
                               >
                                 Promissória
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => excluirCrediario(item.id)}
+                                className="rounded bg-red-600 px-3 py-1 text-white"
+                              >
+                                Excluir
+                              </button>
                             </div>
                           </td>
                         </tr>
