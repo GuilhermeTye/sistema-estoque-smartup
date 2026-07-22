@@ -3236,7 +3236,7 @@ export default function Crediario() {
               </div>
 
               <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-                <table className="min-w-full">
+                <table className="min-w-full table-fixed">
                   <thead className="bg-slate-100">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-black text-slate-500">
@@ -3263,7 +3263,7 @@ export default function Crediario() {
                         Status
                       </th>
 
-                      <th className="px-4 py-3  text-slate-500">
+                      <th className="px-4 py-3 text-right text-xs font-black text-slate-500">
                         Ações
                       </th>
                     </tr>
