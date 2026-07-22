@@ -2601,6 +2601,7 @@ export default function Crediario() {
                         </td>
 
                         <td className="px-5 py-4 text-right">
+                          <div className="flex gap-2">
                           <button
                             type="button"
                             onClick={() =>
@@ -2610,11 +2611,7 @@ export default function Crediario() {
                           >
                             Ver parcelas
                           </button>
-                        </td>
-
-                        <td className="px-2 py-2 text-right">
                           <button
-                            type="button"
                                 onClick={() => 
                                   excluirCrediario(item.id)
                                 }
@@ -2622,7 +2619,7 @@ export default function Crediario() {
                                 >
                                 Excluir
                             </button>
-                            </td>
+                        </td>
                       </tr>
                     ),
                   )}
