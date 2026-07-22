@@ -2619,6 +2619,7 @@ export default function Crediario() {
                                 >
                                 Excluir
                             </button>
+                            </div>
                         </td>
                       </tr>
                     ),
