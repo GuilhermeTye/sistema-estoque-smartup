@@ -2535,7 +2535,7 @@ export default function Crediario() {
                       Status
                     </th>
 
-                    <th className="px-5 py-4 text-center text-xs font-black uppercase text-slate-500">
+                    <th className="px-5 py-4 text-left text-xs font-black uppercase text-slate-500">
                       Ações
                     </th>
                   </tr>
