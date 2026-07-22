@@ -3263,7 +3263,7 @@ export default function Crediario() {
                         Status
                       </th>
 
-                      <th className="px-4 py-3  font-black text-slate-500">
+                      <th className="px-4 py-3 text-center text-xs font-black text-slate-500">
                         Ações
                       </th>
                     </tr>
