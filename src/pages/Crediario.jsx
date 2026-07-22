@@ -2612,7 +2612,7 @@ export default function Crediario() {
                           </button>
                         </td>
 
-                        <td className="px-5 py-4 text-right">
+                        <td className="px-2 py-2 text-right">
                           <button
                             type="button"
                                 onClick={() => 
