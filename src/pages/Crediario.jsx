@@ -2612,7 +2612,7 @@ export default function Crediario() {
                           </button>
                             <button
                                 onClick={() => excluirCrediario(item.id)}
-                               className="rounded-xl bg-red-600 px-4 py-2 text-white"
+                               className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white"
                                 >
                                 Excluir
                             </button>
