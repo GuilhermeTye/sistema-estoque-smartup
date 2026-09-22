@@ -1485,6 +1485,45 @@ export default function Crediario() {
       setRecebendo(false);
     }
   }
+  async function excluirCrediario(id) {
+    const confirmacao = window.confirm(
+      "Tem certeza que deseja excluir este crediário? Todas as parcelas associadas também serão removidas."
+    );
+
+    if (!confirmacao) return;
+
+    try {
+      // 1. Remover parcelas vinculadas ao crediário
+      const { error: erroParcelas } = await supabase
+        .from("crediario_parcelas")
+        .delete()
+        .eq("empresa_id", empresaId)
+        .eq("crediario_id", id);
+
+      if (erroParcelas) {
+        throw new Error(`Erro ao excluir parcelas: ${erroParcelas.message}`);
+      }
+
+      // 2. Remover o registro do crediário
+      const { error: erroCrediario } = await supabase
+        .from("crediarios")
+        .delete()
+        .eq("empresa_id", empresaId)
+        .eq("id", id);
+
+      if (erroCrediario) {
+        throw new Error(`Erro ao excluir crediário: ${erroCrediario.message}`);
+      }
+
+      alert("Crediário excluído com sucesso.");
+
+      // Recarregar a lista atualizada
+      await carregarCrediarios();
+    } catch (error) {
+      console.error("Erro ao excluir crediário:", error);
+      alert(error?.message || "Não foi possível excluir o crediário.");
+    }
+  }
 
   function obterItensCrediario(crediario) {
     if (!crediario?.observacao) return [];
