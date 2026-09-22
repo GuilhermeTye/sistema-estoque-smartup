@@ -2612,13 +2612,12 @@ export default function Crediario() {
                             Ver parcelas
                           </button>
                           <button
-                                onClick={() => 
-                                  excluirCrediario(item.id)
-                                }
-                                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white"
-                                >
-                                Excluir
-                            </button>
+                           type="button"
+                             onClick={() => excluirCrediario(crediario.id)}
+                              className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-red-700"
+                            >
+                              Excluir
+                              </button>
                             </div>
                         </td>
                       </tr>
